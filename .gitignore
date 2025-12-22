@@ -1,0 +1,39 @@
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+.derivedData/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Environment variables
+.env
+.env.local
+
+# Cursor
+.cursor/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build artifacts
+*.swiftmodule
+*.swiftdoc
+*.o
+*.a
+
+# Dependencies
+Pods/
+Carthage/
+
+# Misc
+*.zip
+*.tar.gz
+
