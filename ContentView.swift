@@ -20,11 +20,6 @@ struct ContentView: View {
                     Label("Friends", systemImage: "person.2")
                 }
             
-            GoalsView()
-                .tabItem {
-                    Label("Goals", systemImage: "target")
-                }
-            
             ProfileView()
                 .tabItem {
                     Label("Profile", systemImage: "person")
