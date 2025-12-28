@@ -1,0 +1,22 @@
+{
+  "name": "bucketlist-apple-auth",
+  "version": "1.0.0",
+  "description": "Apple Sign-In client secret generator for Supabase",
+  "main": "generate-apple-secret.js",
+  "scripts": {
+    "generate-secret": "node generate-apple-secret.js"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.3"
+  },
+  "keywords": [
+    "apple",
+    "sign-in",
+    "supabase",
+    "authentication"
+  ],
+  "author": "",
+  "license": "ISC"
+}
+
+

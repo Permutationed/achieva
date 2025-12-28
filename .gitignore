@@ -1,0 +1,53 @@
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+.derivedData/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Environment variables
+.env
+.env.local
+
+# Cursor
+.cursor/
+
+# Secrets & Keys
+AuthKey_*.p8
+*.p8
+secrets/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build artifacts
+*.swiftmodule
+*.swiftdoc
+*.o
+*.a
+build/
+TestResults.xcresult/
+
+# Dependencies
+Pods/
+Carthage/
+
+# Misc
+*.zip
+*.tar.gz
+
+# Node
+node_modules/
+package-lock.json
+
+# Test files
+test_screen.png
+
