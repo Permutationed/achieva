@@ -29,25 +29,19 @@ class SupabaseService: ObservableObject {
     // Caching layer for performance optimization
     private let dataCache = DataCache.shared
     
-    // Debug logging helper
+    // Debug logging helper - only in debug builds
+    #if DEBUG
     private func writeDebugLog(_ data: [String: Any]) {
-        let logPath = "/Users/joshuawang/mvp1/.cursor/debug.log"
+        // Only log in debug mode, not in production
         guard let logJson = try? JSONSerialization.data(withJSONObject: data),
               let logStr = String(data: logJson, encoding: .utf8) else { return }
-        
-        // Ensure directory exists
-        try? FileManager.default.createDirectory(atPath: "/Users/joshuawang/mvp1/.cursor", withIntermediateDirectories: true, attributes: nil)
-        
-        // Append to file
-        if FileManager.default.fileExists(atPath: logPath),
-           let fileHandle = FileHandle(forWritingAtPath: logPath) {
-            fileHandle.seekToEndOfFile()
-            fileHandle.write((logStr + "\n").data(using: .utf8)!)
-            fileHandle.closeFile()
-        } else {
-            try? (logStr + "\n").write(toFile: logPath, atomically: false, encoding: .utf8)
-        }
+        print("🔍 Debug: \(logStr)")
     }
+    #else
+    private func writeDebugLog(_ data: [String: Any]) {
+        // No-op in release builds
+    }
+    #endif
     
     private init() {
         // Load credentials from environment or .env file
