@@ -1,6 +1,6 @@
 //
 //  SignInView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Sign in view with email/password and OAuth options
 //  — redesigned to match CreateGoalView / EditGoalView / OnboardingProfileView UI
@@ -30,7 +30,7 @@ struct SignInView: View {
 
                     Spacer()
 
-                    Text("Bucketlist")
+                    Text("Achieva")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(.primary)
 
@@ -59,7 +59,7 @@ struct SignInView: View {
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundColor(.primary)
 
-                            Text(isSignUp ? "Sign up to start building bucketlists with friends." : "Sign in to keep going.")
+                            Text(isSignUp ? "Sign up to start building achievas with friends." : "Sign in to keep going.")
                                 .font(.system(size: 14))
                                 .foregroundColor(.secondary)
                         }
@@ -152,45 +152,24 @@ struct SignInView: View {
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.primary)
 
-                            VStack(spacing: 12) {
-                                Button(action: handleAppleSignIn) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "applelogo")
-                                            .font(.system(size: 18, weight: .semibold))
-                                        Text("Sign in with Apple")
-                                            .font(.system(size: 16, weight: .bold))
-                                        Spacer()
-                                        Image(systemName: "arrow.right")
-                                            .font(.system(size: 16, weight: .semibold))
-                                    }
-                                    .foregroundColor(.white)
-                                    .padding(.vertical, 14)
-                                    .padding(.horizontal, 14)
-                                    .background(Color.black)
-                                    .cornerRadius(16)
+                            Button(action: handleAppleSignIn) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "applelogo")
+                                        .font(.system(size: 18, weight: .semibold))
+                                    Text("Sign in with Apple")
+                                        .font(.system(size: 16, weight: .bold))
+                                    Spacer()
+                                    Image(systemName: "arrow.right")
+                                        .font(.system(size: 16, weight: .semibold))
                                 }
-                                .buttonStyle(.plain)
-                                .disabled(isLoading)
-
-                                Button(action: handleGoogleSignIn) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "globe")
-                                            .font(.system(size: 18, weight: .semibold))
-                                        Text("Sign in with Google")
-                                            .font(.system(size: 16, weight: .bold))
-                                        Spacer()
-                                        Image(systemName: "arrow.right")
-                                            .font(.system(size: 16, weight: .semibold))
-                                    }
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 14)
-                                    .padding(.horizontal, 14)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(16)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isLoading)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 14)
+                                .background(Color.black)
+                                .cornerRadius(16)
                             }
+                            .buttonStyle(.plain)
+                            .disabled(isLoading)
                         }
                         .padding(16)
                         .background(Color(.systemBackground))
@@ -265,17 +244,6 @@ struct SignInView: View {
         }
     }
 
-    private func handleGoogleSignIn() {
-        Task {
-            isLoading = true
-            do {
-                try await authStore.signInWithGoogle()
-            } catch {
-                // Error is handled by AuthStore
-            }
-            isLoading = false
-        }
-    }
 }
 
 #Preview {

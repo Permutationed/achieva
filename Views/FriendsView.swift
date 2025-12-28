@@ -1,6 +1,6 @@
 //
 //  FriendsView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Friends view redesigned to match the provided HTML design
 //
@@ -19,6 +19,33 @@ struct FriendsView: View {
     @State private var selectedTab = 0 // 0 = All Friends, 1 = Suggestions
     @State private var searchText = ""
     @State private var showingProfile = false
+    @State private var processingRequestIds: Set<UUID> = [] // Track requests being processed
+    @State private var showingFullRequestsList = false
+    @State private var showingUserSearch = false
+    @State private var selectedFriendProfile: UUID?
+    @State private var showingFriendProfile = false
+    @State private var selectedConversation: Conversation?
+    @StateObject private var messagingService = MessagingService.shared
+    @State private var conversations: [Conversation] = []
+    @State private var goalCountsByConversationId: [UUID: Int] = [:]
+    @State private var showingAddFriendsModal = false
+    @State private var isLoadingConversations = false
+    @State private var isCreatingConversation = false
+    
+    // Computed property: Friends without existing conversations
+    private var friendsWithoutConversations: [UserWithFriendshipStatus] {
+        guard let currentUserId = authStore.userId else { return [] }
+        
+        // Get user IDs from existing conversations
+        let conversationUserIds = Set(conversations.compactMap { conversation in
+            conversation.participants?.first(where: { $0.userId != currentUserId })?.userId
+        })
+        
+        // Return friends who don't have conversations
+        return friends.filter { friend in
+            !conversationUserIds.contains(friend.profile.id)
+        }
+    }
     
     // Filtered data based on search
     private var filteredFriends: [UserWithFriendshipStatus] {
@@ -26,7 +53,7 @@ struct FriendsView: View {
             return friends
         }
         return friends.filter { user in
-            user.profile.displayName.localizedCaseInsensitiveContains(searchText) ||
+            user.profile.fullName.localizedCaseInsensitiveContains(searchText) ||
             user.profile.username.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -39,7 +66,7 @@ struct FriendsView: View {
             return nonFriends
         }
         return nonFriends.filter { user in
-            user.profile.displayName.localizedCaseInsensitiveContains(searchText) ||
+            user.profile.fullName.localizedCaseInsensitiveContains(searchText) ||
             user.profile.username.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -49,247 +76,402 @@ struct FriendsView: View {
     }
     
     var body: some View {
-        ZStack {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                // Feed Header
-                FeedHeaderView(
-                    title: "Friends",
-                    currentUserDisplayName: authStore.profile?.displayName ?? "User",
-                    onProfileTap: {
-                        showingProfile = true
-                    }
-                )
+        NavigationStack {
+            ZStack {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
                 
-                // Header with search and tabs
                 VStack(spacing: 0) {
-                    // Search Bar
-                    HStack(spacing: 12) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 18))
-                        
-                        TextField("Find friends or bucketlisters...", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 16))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(24)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    
-                    // Segmented Buttons
-                    HStack(spacing: 8) {
-                        Button {
-                            selectedTab = 0
-                        } label: {
-                            Text("All Friends")
-                                .font(.system(size: 14, weight: selectedTab == 0 ? .semibold : .medium))
-                                .foregroundColor(selectedTab == 0 ? .primary : .secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(selectedTab == 0 ? Color(.systemBackground) : Color.clear)
-                                .cornerRadius(24)
-                        }
-                        .buttonStyle(.plain)
-                        
-                        Button {
-                            selectedTab = 1
-                        } label: {
-                            Text("Suggestions")
-                                .font(.system(size: 14, weight: selectedTab == 1 ? .semibold : .medium))
-                                .foregroundColor(selectedTab == 1 ? .primary : .secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(selectedTab == 1 ? Color(.systemBackground) : Color.clear)
-                                .cornerRadius(24)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(4)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(24)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
-                }
-                .background(.ultraThinMaterial)
-                
-                // Scrollable Content
-                ScrollView {
+                    // Sticky Header
                     VStack(spacing: 0) {
-                        // Friend Requests Section (only show if there are incoming requests)
-                        if !incomingRequests.isEmpty {
+                        HStack {
+                            Text("Friends")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.primary)
+                                .tracking(-0.015)
+                            
+                            Spacer()
+                            
+                            Button {
+                                showingAddFriendsModal = true
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 28, weight: .regular))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.clear)
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                        .padding(.bottom, 12)
+                        
+                        // Search Bar
+                        HStack(spacing: 12) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 20))
+                            
+                            TextField("Search friends", text: $searchText)
+                                .font(.system(size: 14))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                        
+                        Divider()
+                            .background(Color(.separator))
+                    }
+                    .background(.ultraThinMaterial)
+                    .zIndex(1)
+                    
+                    // Scrollable Content
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            // Invite Friends Card
+                            Button {
+                                showingAddFriendsModal = true
+                            } label: {
+                                HStack(spacing: 16) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.blue.opacity(0.05))
+                                            .frame(width: 44, height: 44)
+                                        
+                                        Image(systemName: "person.badge.plus")
+                                            .font(.system(size: 22))
+                                            .foregroundColor(.blue)
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Invite Friends")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        
+                                        Text("Grow your achieva circle")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color(.systemBackground))
+                                            .frame(width: 32, height: 32)
+                                        
+                                        Image(systemName: "arrow.right")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(16)
+                                .background(Color.blue.opacity(0.05))
+                                .cornerRadius(16)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.blue.opacity(0.1), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 20)
+                            
+                            // Suggested Section
                             VStack(spacing: 0) {
                                 HStack {
-                                    Text("Friend Requests")
-                                        .font(.system(size: 18, weight: .bold))
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("(\(incomingRequests.count))")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.blue)
+                                    Text("SUGGESTED")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                        .tracking(0.5)
                                     
                                     Spacer()
-                                    
-                                    Button("See All") {
-                                        // TODO: Navigate to full requests list
-                                    }
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.blue)
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 16)
+                                .padding(.bottom, 12)
                                 
-                                // Show first 2 requests (or all if less than 2)
-                                ForEach(Array(incomingRequests.prefix(2))) { request in
-                                    FriendRequestRow(userWithStatus: request) {
-                                        acceptRequest(request)
-                                    } onDelete: {
-                                        rejectRequest(request)
+                                // Horizontal scroll of suggestions
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 16) {
+                                        if filteredSuggestions.isEmpty {
+                                            VStack(spacing: 8) {
+                                                Image(systemName: "person.2.slash")
+                                                    .font(.system(size: 32))
+                                                    .foregroundColor(.secondary)
+                                                
+                                                Text("No suggestions available")
+                                                    .font(.system(size: 14, weight: .medium))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 20)
+                                        } else {
+                                            // Suggestions
+                                            ForEach(Array(filteredSuggestions.prefix(4))) { suggestion in
+                                                SuggestedUserView(
+                                                    user: suggestion.profile,
+                                                    onAdd: {
+                                                        sendFriendRequest(suggestion.profile)
+                                                    }
+                                                )
+                                            }
+                                            
+                                            // Find More item
+                                            Button {
+                                                showingUserSearch = true
+                                            } label: {
+                                                VStack(spacing: 8) {
+                                                    ZStack {
+                                                        Circle()
+                                                            .stroke(Color(.systemGray4), lineWidth: 2)
+                                                            .frame(width: 64, height: 64)
+                                                        
+                                                        Image(systemName: "person.2")
+                                                            .font(.system(size: 32))
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    
+                                                    Text("Find More")
+                                                        .font(.system(size: 12, weight: .medium))
+                                                        .foregroundColor(.secondary)
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
                                     }
+                                    .padding(.horizontal, 20)
                                 }
+                                .padding(.bottom, 16)
+                                
+                                Divider()
+                                    .background(Color(.separator).opacity(0.5))
+                                    .padding(.top, 8)
                             }
-                            .padding(.top, 8)
                             
-                            // Divider
-                            Rectangle()
-                                .fill(Color(.systemGray5))
-                                .frame(height: 8)
-                                .padding(.top, 8)
-                        }
-                        
-                        // Main Content based on selected tab
-                        if selectedTab == 0 {
-                            // All Friends Tab
+                            // Messages Section
                             VStack(alignment: .leading, spacing: 0) {
                                 HStack {
-                                    Text("Your Friends")
-                                        .font(.system(size: 18, weight: .bold))
+                                    Text("Messages")
+                                        .font(.system(size: 16, weight: .bold))
                                         .foregroundColor(.primary)
                                     
                                     Spacer()
-                                    
-                                    // Sort dropdown (placeholder)
-                                    HStack(spacing: 4) {
-                                        Text("Sort by: Active")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
-                                        Image(systemName: "chevron.down")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.secondary)
-                                    }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                
-                                if isLoading {
-                                    ProgressView()
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                } else if filteredFriends.isEmpty {
-                                    Text("No friends yet")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.secondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 16)
-                                } else {
-                                    ForEach(filteredFriends) { friend in
-                                        FriendRow(userWithStatus: friend) {
-                                            // Chat action (placeholder)
-                                        } onRemove: {
-                                            removeFriend(friend)
-                                        }
-                                    }
-                                }
-                                
-                                // Invite Friends Card
-                                Button {
-                                    // TODO: Invite friends action
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "person.badge.plus")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(.secondary)
-                                            .frame(width: 40, height: 40)
-                                            .background(Color(.systemGray5))
-                                            .clipShape(Circle())
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Invite Friends")
-                                                .font(.system(size: 14, weight: .bold))
-                                                .foregroundColor(.primary)
-                                            Text("Share your bucketlist journey")
-                                                .font(.system(size: 12))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .padding(16)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color(.systemGray4), style: StrokeStyle(lineWidth: 1, dash: [5]))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, 20)
                                 .padding(.top, 16)
-                            }
-                            .padding(.top, 16)
-                        } else {
-                            // Suggestions Tab
-                            VStack(alignment: .leading, spacing: 0) {
-                                if isLoading {
+                                .padding(.bottom, 12)
+                                
+                                if isLoadingConversations {
                                     ProgressView()
                                         .frame(maxWidth: .infinity)
                                         .padding()
-                                } else if filteredSuggestions.isEmpty {
-                                    Text("No suggestions")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.secondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 16)
+                                } else if conversations.isEmpty && friendsWithoutConversations.isEmpty {
+                                    VStack(spacing: 12) {
+                                        Image(systemName: "bubble.left.and.bubble.right")
+                                            .font(.system(size: 48))
+                                            .foregroundColor(.secondary)
+                                        
+                                        Text("No conversations yet")
+                                            .font(.system(size: 17, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                        
+                                        Text("Start chatting with friends to propose goals and collaborate!")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.center)
+                                            .padding(.horizontal, 20)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 40)
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 32)
                                 } else {
-                                    ForEach(filteredSuggestions) { user in
-                                        SuggestionRow(userWithStatus: user) {
-                                            sendFriendRequest(user.profile)
-                                        }
+                                    // Show existing conversations
+                                    ForEach(conversations) { conversation in
+                                        ConversationRow(
+                                            conversation: conversation,
+                                            currentUserId: authStore.userId ?? UUID(),
+                                            goalCount: goalCountsByConversationId[conversation.id],
+                                            onTap: {
+                                                selectedConversation = conversation
+                                            }
+                                        )
+                                    }
+                                    
+                                    // Show friends without conversations
+                                    ForEach(friendsWithoutConversations) { friend in
+                                        FriendConversationRow(
+                                            friend: friend.profile,
+                                            isLoading: isCreatingConversation,
+                                            onTap: {
+                                                Task {
+                                                    await createConversationWithFriend(friendId: friend.profile.id)
+                                                }
+                                            }
+                                        )
                                     }
                                 }
                             }
-                            .padding(.top, 16)
+                            .padding(.bottom, 100)
                         }
-                        
-                        // Bottom padding
-                        Spacer()
-                            .frame(height: 20)
                     }
                 }
+            }
+            .navigationDestination(item: $selectedConversation) { conversation in
+                ChatView(conversation: conversation)
             }
         }
         .task {
             await loadData()
+            await loadConversations()
         }
         .refreshable {
             await loadData()
+            await loadConversations()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .friendRequestReceivedNotification)) { _ in
+            Task {
+                await loadData()
+            }
+        }
+        .fullScreenCover(isPresented: $showingAddFriendsModal) {
+            AddFriendsModal(
+                onSearchByUsername: {
+                    showingUserSearch = true
+                },
+                onSuggestedFriends: {
+                    showingUserSearch = true
+                }
+            )
         }
         .sheet(isPresented: $showingProfile) {
             NavigationView {
                 ProfileView()
             }
+        }
+        .sheet(isPresented: $showingFullRequestsList) {
+            FriendRequestsListView(
+                requests: pendingRequests,
+                isLoading: isLoading,
+                onAccept: { request in
+                    await acceptRequestAsync(request)
+                },
+                onReject: { request in
+                    await rejectRequestAsync(request)
+                },
+                onRefresh: {
+                    await loadData()
+                }
+            )
+        }
+        .sheet(isPresented: $showingUserSearch) {
+            UserSearchView {
+                // Refresh friends list after sending request
+                Task {
+                    await loadData()
+                }
+            }
+        }
+        .sheet(isPresented: $showingFriendProfile) {
+            if let friendId = selectedFriendProfile {
+                OtherUserProfileView(userId: friendId)
+            }
+        }
+    }
+    
+    // MARK: - Load Conversations
+    
+    private func loadConversations() async {
+        await MainActor.run {
+            isLoadingConversations = true
+        }
+        
+        do {
+            let loadedConversations = try await messagingService.getConversations()
+            print("✅ FriendsView: Loaded \(loadedConversations.count) conversations")
+            
+            // Load goal counts for conversations (non-blocking - don't fail if this errors)
+            let conversationIds = loadedConversations.map { $0.id }
+            let goalCounts = try? await supabaseService.getGoalCountsForConversations(conversationIds: conversationIds)
+            
+            await MainActor.run {
+                conversations = loadedConversations
+                goalCountsByConversationId = goalCounts ?? [:]
+                isLoadingConversations = false
+            }
+        } catch {
+            // Handle cancellation errors gracefully (they're not real errors)
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                print("⚠️ Conversation loading cancelled (this is normal when navigating quickly)")
+                await MainActor.run {
+                    isLoadingConversations = false
+                    // Don't set error message for cancellations
+                }
+                return
+            }
+            
+            print("❌ Error loading conversations: \(error)")
+            if let decodingError = error as? DecodingError {
+                print("   Decoding error details: \(decodingError)")
+            }
+            await MainActor.run {
+                isLoadingConversations = false
+                errorMessage = "Failed to load conversations: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    // MARK: - Friend Conversation Row (for friends without conversations)
+    
+    struct FriendConversationRow: View {
+        let friend: Profile
+        let isLoading: Bool
+        let onTap: () -> Void
+        
+        var body: some View {
+            Button {
+                onTap()
+            } label: {
+                HStack(spacing: 16) {
+                    // Avatar
+                    AvatarView(name: friend.fullName, size: 56, avatarUrl: friend.avatarUrl)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Name
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(friend.fullName)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                        }
+                        
+                        // "Start conversation" text
+                        Text("Start conversation")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(Color(.systemBackground))
+            .disabled(isLoading)
         }
     }
     
@@ -297,21 +479,21 @@ struct FriendsView: View {
     
     struct FriendRequestRow: View {
         let userWithStatus: UserWithFriendshipStatus
+        let isProcessing: Bool
         let onConfirm: () -> Void
         let onDelete: () -> Void
         
         var body: some View {
             VStack(spacing: 12) {
                 HStack(spacing: 16) {
-                    AvatarView(name: userWithStatus.profile.displayName, size: 56)
+                    AvatarView(name: userWithStatus.profile.fullName, size: 56)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(userWithStatus.profile.displayName)
+                        Text(userWithStatus.profile.fullName)
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.primary)
                         
-                        // TODO: Add mutual friends count when available
-                        Text("12 mutual friends")
+                        Text("@\(userWithStatus.profile.username)")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
                     }
@@ -327,16 +509,25 @@ struct FriendsView: View {
                     Button {
                         onConfirm()
                     } label: {
-                        Text("Confirm")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .background(Color.blue)
-                            .cornerRadius(24)
-                            .shadow(color: Color.blue.opacity(0.2), radius: 4, x: 0, y: 2)
+                        HStack {
+                            if isProcessing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Text("Confirm")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(isProcessing ? Color.blue.opacity(0.6) : Color.blue)
+                        .cornerRadius(24)
+                        .shadow(color: Color.blue.opacity(0.2), radius: 4, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isProcessing)
                     
                     Button {
                         onDelete()
@@ -350,6 +541,7 @@ struct FriendsView: View {
                             .cornerRadius(24)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isProcessing)
                 }
                 .padding(.leading, 72)
             }
@@ -377,50 +569,72 @@ struct FriendsView: View {
         }
     }
     
+    // MARK: - Suggested User View
+    
+    struct SuggestedUserView: View {
+        let user: Profile
+        let onAdd: () -> Void
+        
+        var body: some View {
+            VStack(spacing: 8) {
+                Button {
+                    onAdd()
+                } label: {
+                    AvatarView(name: user.fullName, size: 64, avatarUrl: user.avatarUrl)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.clear, lineWidth: 2)
+                        )
+                }
+                .buttonStyle(.plain)
+                
+                Text(user.fullName.components(separatedBy: " ").first ?? user.fullName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .frame(width: 72)
+            }
+        }
+    }
+    
     // MARK: - Friend Row
     
     struct FriendRow: View {
         let userWithStatus: UserWithFriendshipStatus
         let onChat: () -> Void
         let onRemove: () -> Void
+        let onTap: () -> Void
         
         var body: some View {
             HStack(spacing: 16) {
                 ZStack(alignment: .bottomTrailing) {
-                    AvatarView(name: userWithStatus.profile.displayName, size: 48)
+                    AvatarView(name: userWithStatus.profile.fullName, size: 48)
                     
-                    // Online indicator (placeholder - would need real online status)
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 12, height: 12)
-                        .overlay(
-                            Circle()
-                                .stroke(Color(.systemBackground), lineWidth: 2)
-                        )
-                        .offset(x: 2, y: 2)
+                    // Online indicator removed - not implemented yet
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(userWithStatus.profile.displayName)
+                    Text(userWithStatus.profile.fullName)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.primary)
                     
-                    // TODO: Add activity status when available
-                    Text("Online now")
+                    // Show username instead of online status (online status not implemented)
+                    Text("@\(userWithStatus.profile.username)")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 
                 Spacer()
                 
+                // Message button
                 Button {
                     onChat()
                 } label: {
-                    Image(systemName: "message")
+                    Image(systemName: "message.fill")
                         .font(.system(size: 20))
-                        .foregroundColor(.secondary)
-                        .frame(width: 40, height: 40)
-                        .background(Color(.systemGray6))
+                        .foregroundColor(.blue)
+                        .frame(width: 36, height: 36)
+                        .background(Color.blue.opacity(0.1))
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -430,7 +644,24 @@ struct FriendsView: View {
             .background(Color(.systemBackground))
             .contentShape(Rectangle())
             .onTapGesture {
-                // TODO: Navigate to friend profile
+                onTap()
+            }
+        }
+    }
+    
+    private func startChat(with friend: Profile) async {
+        print("💬 FriendsView: Starting chat with friend: \(friend.fullName) (\(friend.id))")
+        do {
+            let conversation = try await messagingService.createDirectConversation(with: friend.id)
+            print("✅ FriendsView: Conversation created/retrieved: \(conversation.id)")
+            await MainActor.run {
+                selectedConversation = conversation
+                print("✅ FriendsView: selectedConversation set to: \(conversation.id)")
+            }
+        } catch {
+            print("❌ FriendsView: Error starting chat: \(error)")
+            await MainActor.run {
+                errorMessage = "Failed to start conversation: \(error.localizedDescription)"
             }
         }
     }
@@ -443,10 +674,10 @@ struct FriendsView: View {
         
         var body: some View {
             HStack(spacing: 16) {
-                AvatarView(name: userWithStatus.profile.displayName, size: 48)
+                AvatarView(name: userWithStatus.profile.fullName, size: 48)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(userWithStatus.profile.displayName)
+                    Text(userWithStatus.profile.fullName)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.primary)
                     
@@ -491,16 +722,18 @@ struct FriendsView: View {
     private func loadData() async {
         guard let userId = authStore.userId else {
             await MainActor.run {
-                self.allUsers = []
-                self.pendingRequests = []
-                self.friends = []
+                // Don't clear existing data if not authenticated - might be temporary
                 self.isLoading = false
             }
             return
         }
         
-        isLoading = true
-        errorMessage = nil
+        // Only set loading if we don't have cached data
+        let hasCachedData = !friends.isEmpty || !pendingRequests.isEmpty
+        await MainActor.run {
+            isLoading = !hasCachedData
+            errorMessage = nil
+        }
         
         do {
             // Load all profiles (excluding current user)
@@ -511,22 +744,32 @@ struct FriendsView: View {
                 .execute()
                 .value
             
-            // Load all friendships involving current user
+            // Load all friendships involving current user (excluding blocked)
+            // Query friendships where current user is user_id_1
             let friendships1: [Friendship] = try await supabaseService.client
                 .from("friendships")
                 .select()
                 .eq("user_id_1", value: userId)
+                .neq("status", value: "blocked")
                 .execute()
                 .value
             
+            // Query friendships where current user is user_id_2
             let friendships2: [Friendship] = try await supabaseService.client
                 .from("friendships")
                 .select()
                 .eq("user_id_2", value: userId)
+                .neq("status", value: "blocked")
                 .execute()
                 .value
             
             let friendships = friendships1 + friendships2
+            
+            print("📊 FriendsView: Loaded \(friendships.count) total friendships")
+            print("   user_id_1 matches: \(friendships1.count), user_id_2 matches: \(friendships2.count)")
+            let acceptedFriendships = friendships.filter { $0.status == .accepted }
+            let pendingFriendships = friendships.filter { $0.status == .pending }
+            print("   Accepted: \(acceptedFriendships.count), Pending: \(pendingFriendships.count)")
             
             // Create a map of user ID to friendship
             var friendshipMap: [UUID: Friendship] = [:]
@@ -563,6 +806,11 @@ struct FriendsView: View {
                 }
             }
             
+            print("📊 FriendsView: Categorized users")
+            print("   Total users: \(allUsersWithStatus.count)")
+            print("   Friends: \(friendsList.count)")
+            print("   Pending requests: \(pendingList.count)")
+            
             await MainActor.run {
                 self.allUsers = allUsersWithStatus
                 self.pendingRequests = pendingList
@@ -571,14 +819,13 @@ struct FriendsView: View {
                 self.errorMessage = nil
             }
         } catch {
+            // Don't clear existing data on error - preserve cache
             await MainActor.run {
-                self.allUsers = []
-                self.pendingRequests = []
-                self.friends = []
                 self.errorMessage = "Failed to load: \(error.localizedDescription)"
                 self.isLoading = false
             }
             print("Error loading friends data: \(error)")
+            print("⚠️ Preserving existing friends data: \(friends.count) friends, \(pendingRequests.count) pending")
         }
     }
     
@@ -625,13 +872,24 @@ struct FriendsView: View {
     
     private func acceptRequest(_ userWithStatus: UserWithFriendshipStatus) {
         guard let friendshipId = userWithStatus.friendshipId else {
-            Task { @MainActor in
-                errorMessage = "Friendship ID not found"
+            Task {
+                await MainActor.run {
+                    errorMessage = "Friendship ID not found"
+                }
             }
             return
         }
         
+        // Prevent duplicate requests
+        guard !processingRequestIds.contains(friendshipId) else { return }
+        
         Task {
+            // Mark as processing
+            await MainActor.run {
+                processingRequestIds.insert(friendshipId)
+                errorMessage = nil
+            }
+            
             do {
                 struct FriendshipUpdate: Encodable {
                     let status: String
@@ -652,16 +910,15 @@ struct FriendsView: View {
                     .eq("id", value: friendshipId)
                     .execute()
                 
-                await MainActor.run {
-                    errorMessage = nil
-                    successMessage = "Friend request accepted!"
-                }
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // Immediately refresh data (no delay)
                 await loadData()
                 
                 await MainActor.run {
-                    selectedTab = 0
+                    processingRequestIds.remove(friendshipId)
+                    successMessage = "Friend request accepted!"
+                    selectedTab = 0 // Switch to friends tab to show the new friend
+                    
+                    // Clear success message after 3 seconds
                     Task {
                         try? await Task.sleep(nanoseconds: 3_000_000_000)
                         await MainActor.run {
@@ -671,21 +928,141 @@ struct FriendsView: View {
                 }
             } catch {
                 await MainActor.run {
+                    processingRequestIds.remove(friendshipId)
                     errorMessage = "Failed to accept request: \(error.localizedDescription)"
                 }
             }
         }
     }
     
-    private func rejectRequest(_ userWithStatus: UserWithFriendshipStatus) {
+    private func acceptRequestAsync(_ userWithStatus: UserWithFriendshipStatus) async {
         guard let friendshipId = userWithStatus.friendshipId else {
-            Task { @MainActor in
+            await MainActor.run {
                 errorMessage = "Friendship ID not found"
             }
             return
         }
         
+        // Prevent duplicate requests
+        guard !processingRequestIds.contains(friendshipId) else { return }
+        
+        // Mark as processing
+        await MainActor.run {
+            processingRequestIds.insert(friendshipId)
+            errorMessage = nil
+        }
+        
+        do {
+            struct FriendshipUpdate: Encodable {
+                let status: String
+                let established_at: String
+            }
+            
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            let update = FriendshipUpdate(
+                status: "accepted",
+                established_at: dateFormatter.string(from: Date())
+            )
+            
+            try await supabaseService.client
+                .from("friendships")
+                .update(update)
+                .eq("id", value: friendshipId)
+                .execute()
+            
+            // Immediately refresh data
+            await loadData()
+            
+            await MainActor.run {
+                processingRequestIds.remove(friendshipId)
+                successMessage = "Friend request accepted!"
+                selectedTab = 0 // Switch to friends tab to show the new friend
+                
+                // Clear success message after 3 seconds
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await MainActor.run {
+                        successMessage = nil
+                    }
+                }
+            }
+        } catch {
+            await MainActor.run {
+                processingRequestIds.remove(friendshipId)
+                errorMessage = "Failed to accept request: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    private func rejectRequestAsync(_ userWithStatus: UserWithFriendshipStatus) async {
+        guard let friendshipId = userWithStatus.friendshipId else {
+            await MainActor.run {
+                errorMessage = "Friendship ID not found"
+            }
+            return
+        }
+        
+        // Prevent duplicate requests
+        guard !processingRequestIds.contains(friendshipId) else { return }
+        
+        // Mark as processing
+        await MainActor.run {
+            processingRequestIds.insert(friendshipId)
+            errorMessage = nil
+        }
+        
+        do {
+            try await supabaseService.client
+                .from("friendships")
+                .delete()
+                .eq("id", value: friendshipId)
+                .execute()
+            
+            // Immediately refresh data
+            await loadData()
+            
+            await MainActor.run {
+                processingRequestIds.remove(friendshipId)
+                successMessage = "Request rejected"
+                
+                // Clear success message after 3 seconds
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await MainActor.run {
+                        successMessage = nil
+                    }
+                }
+            }
+        } catch {
+            await MainActor.run {
+                processingRequestIds.remove(friendshipId)
+                errorMessage = "Failed to reject request: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    private func rejectRequest(_ userWithStatus: UserWithFriendshipStatus) {
+        guard let friendshipId = userWithStatus.friendshipId else {
+            Task {
+                await MainActor.run {
+                    errorMessage = "Friendship ID not found"
+                }
+            }
+            return
+        }
+        
+        // Prevent duplicate requests
+        guard !processingRequestIds.contains(friendshipId) else { return }
+        
         Task {
+            // Mark as processing
+            await MainActor.run {
+                processingRequestIds.insert(friendshipId)
+                errorMessage = nil
+            }
+            
             do {
                 try await supabaseService.client
                     .from("friendships")
@@ -693,15 +1070,14 @@ struct FriendsView: View {
                     .eq("id", value: friendshipId)
                     .execute()
                 
-                await MainActor.run {
-                    errorMessage = nil
-                    successMessage = "Request rejected"
-                }
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // Immediately refresh data (no delay)
                 await loadData()
                 
                 await MainActor.run {
+                    processingRequestIds.remove(friendshipId)
+                    successMessage = "Request rejected"
+                    
+                    // Clear success message after 3 seconds
                     Task {
                         try? await Task.sleep(nanoseconds: 3_000_000_000)
                         await MainActor.run {
@@ -711,8 +1087,39 @@ struct FriendsView: View {
                 }
             } catch {
                 await MainActor.run {
+                    processingRequestIds.remove(friendshipId)
                     errorMessage = "Failed to reject request: \(error.localizedDescription)"
                 }
+            }
+        }
+    }
+    
+    // MARK: - Create Conversation with Friend
+    
+    private func createConversationWithFriend(friendId: UUID) async {
+        guard !isCreatingConversation else { return }
+        
+        await MainActor.run {
+            isCreatingConversation = true
+        }
+        
+        do {
+            let conversation = try await messagingService.createDirectConversation(with: friendId)
+            print("✅ Created conversation with friend: \(friendId)")
+            
+            // Reload conversations to include the new one
+            await loadConversations()
+            
+            // Navigate to the new conversation
+            await MainActor.run {
+                selectedConversation = conversation
+                isCreatingConversation = false
+            }
+        } catch {
+            print("❌ Error creating conversation: \(error)")
+            await MainActor.run {
+                isCreatingConversation = false
+                errorMessage = "Failed to start conversation: \(error.localizedDescription)"
             }
         }
     }
@@ -721,8 +1128,10 @@ struct FriendsView: View {
     
     private func removeFriend(_ userWithStatus: UserWithFriendshipStatus) {
         guard let friendshipId = userWithStatus.friendshipId else {
-            Task { @MainActor in
-                errorMessage = "Friendship ID not found"
+            Task {
+                await MainActor.run {
+                    errorMessage = "Friendship ID not found"
+                }
             }
             return
         }
@@ -743,12 +1152,10 @@ struct FriendsView: View {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 await loadData()
                 
-                await MainActor.run {
-                    Task {
-                        try? await Task.sleep(nanoseconds: 3_000_000_000)
-                        await MainActor.run {
-                            successMessage = nil
-                        }
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await MainActor.run {
+                        successMessage = nil
                     }
                 }
             } catch {

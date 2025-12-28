@@ -1,6 +1,6 @@
 //
 //  UserPickerView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Component for selecting users for custom ACL
 //
@@ -25,7 +25,7 @@ struct UserPickerView: View {
             return allProfiles
         }
         return allProfiles.filter { profile in
-            profile.displayName.localizedCaseInsensitiveContains(searchText) ||
+            profile.fullName.localizedCaseInsensitiveContains(searchText) ||
             profile.username.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -54,7 +54,7 @@ struct UserPickerView: View {
                     ForEach(filteredProfiles) { profile in
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(profile.displayName)
+                                Text(profile.fullName)
                                     .font(.headline)
                                 Text("@\(profile.username)")
                                     .font(.caption)
@@ -131,7 +131,7 @@ struct UserPickerView: View {
                 .from("profiles")
                 .select()
                 .neq("id", value: userId)
-                .order("display_name", ascending: true)
+                .order("first_name", ascending: true)
                 .execute()
                 .value
             

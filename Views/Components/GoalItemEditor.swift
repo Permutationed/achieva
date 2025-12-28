@@ -1,6 +1,6 @@
 //
 //  GoalItemEditor.swift
-//  Bucketlist
+//  Achieva
 //
 //  Component for creating/editing a goal item
 //

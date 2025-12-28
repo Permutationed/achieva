@@ -1,6 +1,6 @@
 //
 //  Friendship.swift
-//  Bucketlist
+//  Achieva
 //
 //  Friendship model matching backend schema
 //
@@ -28,6 +28,15 @@ struct Friendship: Identifiable, Codable {
         case status
         case establishedAt = "established_at"
         case createdAt = "created_at"
+    }
+    
+    init(id: UUID, userId1: UUID, userId2: UUID, status: FriendshipStatus, establishedAt: Date?, createdAt: Date) {
+        self.id = id
+        self.userId1 = userId1
+        self.userId2 = userId2
+        self.status = status
+        self.establishedAt = establishedAt
+        self.createdAt = createdAt
     }
     
     init(from decoder: Decoder) throws {

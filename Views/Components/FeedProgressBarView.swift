@@ -1,6 +1,6 @@
 //
 //  FeedProgressBarView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Progress section inspired by the provided HTML.
 //

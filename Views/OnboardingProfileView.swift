@@ -1,8 +1,8 @@
 //
 //  OnboardingProfileView.swift
-//  Bucketlist
+//  Achieva
 //
-//  Onboarding view to collect profile information (display_name, username, date_of_birth)
+//  Onboarding view to collect profile information (first_name, last_name, username, date_of_birth)
 //  — redesigned to match CreateGoalView / EditGoalView UI
 //
 
@@ -11,9 +11,9 @@ import SwiftUI
 struct OnboardingProfileView: View {
     @StateObject private var authStore = AuthStore.shared
     @State private var username = ""
-    @State private var displayName = ""
+    @State private var firstName = ""
+    @State private var lastName = ""
     @State private var dateOfBirth = Date()
-    @State private var hasDateOfBirth = false
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -116,14 +116,14 @@ struct OnboardingProfileView: View {
                                     .cornerRadius(14)
                             }
 
-                            // Display Name
+                            // First Name
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Display Name")
+                                Text("First Name")
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(.secondary)
 
-                                TextField("e.g. Joshua", text: $displayName)
-                                    .textContentType(.name)
+                                TextField("e.g. Joshua", text: $firstName)
+                                    .textContentType(.givenName)
                                     .textInputAutocapitalization(.words)
                                     .autocorrectionDisabled(false)
                                     .font(.system(size: 16, weight: .semibold))
@@ -132,53 +132,39 @@ struct OnboardingProfileView: View {
                                     .cornerRadius(14)
                             }
 
-                            // DOB Toggle Row
-                            Button {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                    hasDateOfBirth.toggle()
-                                }
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: hasDateOfBirth ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(hasDateOfBirth ? .blue : .secondary)
+                            // Last Name
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Last Name")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.secondary)
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Add Date of Birth")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.primary)
-                                        Text("Optional — used for birthday features.")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.secondary)
-                                    }
-
-                                    Spacer()
-                                }
-                                .contentShape(Rectangle())
-                                .padding(.top, 4)
-                            }
-                            .buttonStyle(.plain)
-
-                            // DOB Picker (shown only if toggled on)
-                            if hasDateOfBirth {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Date of Birth")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
-
-                                    DatePicker(
-                                        "",
-                                        selection: $dateOfBirth,
-                                        displayedComponents: .date
-                                    )
-                                    .datePickerStyle(.compact)
-                                    .labelsHidden()
+                                TextField("e.g. Wang", text: $lastName)
+                                    .textContentType(.familyName)
+                                    .textInputAutocapitalization(.words)
+                                    .autocorrectionDisabled(false)
+                                    .font(.system(size: 16, weight: .semibold))
                                     .padding(14)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(Color(.systemBackground))
                                     .cornerRadius(14)
-                                }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            // Date of Birth (always required)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Date of Birth")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.secondary)
+
+                                DatePicker(
+                                    "",
+                                    selection: $dateOfBirth,
+                                    displayedComponents: .date
+                                )
+                                .datePickerStyle(.compact)
+                                .labelsHidden()
+                                .padding(14)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(14)
                             }
                         }
                         .padding(16)
@@ -214,13 +200,13 @@ struct OnboardingProfileView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(
-                                (username.isEmpty || displayName.isEmpty || isLoading) ? Color.gray : Color.blue
+                                (username.isEmpty || firstName.isEmpty || lastName.isEmpty || isLoading) ? Color.gray : Color.blue
                             )
                             .cornerRadius(28)
                             .shadow(color: Color.blue.opacity(0.2), radius: 8, x: 0, y: 4)
                         }
                         .buttonStyle(.plain)
-                        .disabled(username.isEmpty || displayName.isEmpty || isLoading)
+                        .disabled(username.isEmpty || firstName.isEmpty || lastName.isEmpty || isLoading)
                     }
                     .padding(16)
                     .background(.ultraThinMaterial)
@@ -230,8 +216,8 @@ struct OnboardingProfileView: View {
     }
 
     private func saveProfile() {
-        guard !username.isEmpty, !displayName.isEmpty else {
-            errorMessage = "Username and display name are required"
+        guard !username.isEmpty, !firstName.isEmpty, !lastName.isEmpty else {
+            errorMessage = "Username, first name, and last name are required"
             return
         }
 
@@ -240,17 +226,26 @@ struct OnboardingProfileView: View {
             errorMessage = nil
 
             do {
-                let dob = hasDateOfBirth ? dateOfBirth : nil
                 try await authStore.createOrUpdateProfile(
                     username: username,
-                    displayName: displayName,
-                    dateOfBirth: dob
+                    firstName: firstName,
+                    lastName: lastName,
+                    dateOfBirth: dateOfBirth
                 )
+                
+                // Clear the new signup flag after completing onboarding
+                await MainActor.run {
+                    authStore.isNewSignUp = false
+                }
+            } catch let error as AuthError {
+                errorMessage = error.localizedDescription
             } catch {
                 errorMessage = "Failed to save profile: \(error.localizedDescription)"
             }
 
-            isLoading = false
+            await MainActor.run {
+                isLoading = false
+            }
         }
     }
 }

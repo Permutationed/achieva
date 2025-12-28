@@ -11,27 +11,38 @@ ADD COLUMN IF NOT EXISTS cover_image_url TEXT;
 COMMENT ON COLUMN goals.cover_image_url IS 'Public URL to the goal cover image stored in Supabase Storage';
 
 -- =====================================================
--- PART 2: Create Storage Bucket (run via Supabase Dashboard or API)
+-- PART 2: Create Storage Bucket
 -- =====================================================
 
--- Note: Storage bucket creation is typically done via Supabase Dashboard or API
--- Bucket name: 'goal-covers'
--- Bucket settings: 
---   - Public: false (use authenticated access)
---   - File size limit: 5MB recommended
---   - Allowed MIME types: image/jpeg, image/png, image/webp
-
--- To create via SQL, you would need to insert into storage.buckets:
--- INSERT INTO storage.buckets (id, name, public)
--- VALUES ('goal-covers', 'goal-covers', false)
--- ON CONFLICT (id) DO NOTHING;
+-- Create the storage bucket for goal cover images
+-- Set to public=true so images can be accessed via public URLs (RLS policies still control access)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'goal-covers',
+  'goal-covers',
+  true, -- Public bucket for faster image loading (RLS policies still apply)
+  5242880, -- 5MB in bytes
+  ARRAY['image/jpeg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO UPDATE
+SET 
+  name = EXCLUDED.name,
+  public = true, -- Ensure bucket is public
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- =====================================================
 -- PART 3: Storage RLS Policies
 -- =====================================================
 
+-- Drop existing policies if they exist (for idempotency)
+DROP POLICY IF EXISTS "Users can upload cover images for their goals" ON storage.objects;
+DROP POLICY IF EXISTS "Users can view goal cover images based on visibility" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own goal cover images" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own goal cover images" ON storage.objects;
+
 -- Policy 1: Users can upload images for their own goals
-CREATE POLICY IF NOT EXISTS "Users can upload cover images for their goals"
+CREATE POLICY "Users can upload cover images for their goals"
 ON storage.objects FOR INSERT
 WITH CHECK (
   bucket_id = 'goal-covers' AND
@@ -42,7 +53,7 @@ WITH CHECK (
 );
 
 -- Policy 2: Users can view images based on goal visibility
-CREATE POLICY IF NOT EXISTS "Users can view goal cover images based on visibility"
+CREATE POLICY "Users can view goal cover images based on visibility"
 ON storage.objects FOR SELECT
 USING (
   bucket_id = 'goal-covers' AND
@@ -52,7 +63,7 @@ USING (
       SELECT id FROM goals WHERE visibility = 'public'
     )
     OR
-    -- Friends-only goals viewable by friends (when friendships table is ready)
+    -- Friends-only goals viewable by friends
     (
       (storage.foldername(name))[1]::uuid IN (
         SELECT id FROM goals WHERE visibility = 'friends' AND owner_id = auth.uid()
@@ -61,9 +72,9 @@ USING (
       (storage.foldername(name))[1]::uuid IN (
         SELECT g.id FROM goals g
         WHERE g.visibility = 'friends' AND g.owner_id IN (
-          SELECT user_id FROM friendships WHERE friend_id = auth.uid() AND status = 'accepted'
+          SELECT user_id_1 FROM friendships WHERE user_id_2 = auth.uid() AND status = 'accepted'
           UNION
-          SELECT friend_id FROM friendships WHERE user_id = auth.uid() AND status = 'accepted'
+          SELECT user_id_2 FROM friendships WHERE user_id_1 = auth.uid() AND status = 'accepted'
         )
       )
     )
@@ -76,7 +87,7 @@ USING (
 );
 
 -- Policy 3: Users can update their own goal images
-CREATE POLICY IF NOT EXISTS "Users can update their own goal cover images"
+CREATE POLICY "Users can update their own goal cover images"
 ON storage.objects FOR UPDATE
 USING (
   bucket_id = 'goal-covers' AND
@@ -87,7 +98,7 @@ USING (
 );
 
 -- Policy 4: Users can delete their own goal images
-CREATE POLICY IF NOT EXISTS "Users can delete their own goal cover images"
+CREATE POLICY "Users can delete their own goal cover images"
 ON storage.objects FOR DELETE
 USING (
   bucket_id = 'goal-covers' AND

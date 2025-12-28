@@ -1,6 +1,6 @@
 //
 //  CreateGoalView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Create new goal view - redesigned to match HTML design
 //
@@ -101,9 +101,6 @@ struct CreateGoalView: View {
     @State private var visibility: GoalVisibility = .public
     @State private var isCreating = false
     @State private var errorMessage: String?
-    @State private var selectedACLUsers: Set<UUID> = []
-    @State private var userRoles: [UUID: String] = [:]
-    @State private var showingUserPicker = false
     
     // Goal items (list items)
     @State private var items: [GoalItemDraft] = []
@@ -113,6 +110,16 @@ struct CreateGoalView: View {
     // Cover image
     @State private var selectedCoverImage: UIImage?
     @State private var showingImagePicker = false
+    
+    // Draft
+    @State private var saveAsDraft = false
+    
+    // Tagging
+    @State private var taggedUsers: Set<UUID> = []
+    @State private var friends: [UserWithFriendshipStatus] = []
+    @State private var isLoadingFriends = false
+    @State private var showingFriendPicker = false
+    @StateObject private var messagingService = MessagingService.shared
     
     var body: some View {
         ZStack {
@@ -130,7 +137,7 @@ struct CreateGoalView: View {
                     
                     Spacer()
                     
-                    Text("New Bucketlist")
+                    Text("New Achieva")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(.primary)
                     
@@ -243,6 +250,8 @@ struct CreateGoalView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 24)
                         
+                        .padding(.top, 8)
+                        
                         // Title Input
                         VStack(alignment: .leading, spacing: 8) {
                             Text("List Title")
@@ -258,9 +267,6 @@ struct CreateGoalView: View {
                                     RoundedRectangle(cornerRadius: 16)
                                         .stroke(Color.clear, lineWidth: 1)
                                 )
-                                .onChange(of: title) { _ in
-                                    // Focus border would go here
-                                }
                         }
                         .padding(.horizontal, 16)
                         
@@ -394,9 +400,7 @@ struct CreateGoalView: View {
                             // Add Item Button
                             if !isAddingItem {
                                 Button {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        isAddingItem = true
-                                    }
+                                    isAddingItem = true
                                 } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "plus.circle.fill")
@@ -465,61 +469,110 @@ struct CreateGoalView: View {
                                 .buttonStyle(.plain)
                                 
                                 Button {
-                                    visibility = .custom
+                                    visibility = .private
                                 } label: {
                                     HStack(spacing: 8) {
-                                        Image(systemName: "lock")
+                                        Image(systemName: "lock.fill")
                                             .font(.system(size: 18))
                                         Text("Private")
-                                            .font(.system(size: 14, weight: visibility == .custom ? .bold : .medium))
+                                            .font(.system(size: 14, weight: visibility == .private ? .bold : .medium))
                                     }
-                                    .foregroundColor(visibility == .custom ? .blue : .secondary)
+                                    .foregroundColor(visibility == .private ? .blue : .secondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
-                                    .background(visibility == .custom ? Color(.systemBackground) : Color.clear)
+                                    .background(visibility == .private ? Color(.systemBackground) : Color.clear)
                                     .cornerRadius(24)
                                 }
                                 .buttonStyle(.plain)
+                                
                             }
                             .padding(4)
                             .background(Color(.systemGray6))
                             .cornerRadius(24)
                             .padding(.horizontal, 16)
                             
-                            if visibility == .custom {
-                                Button {
-                                    showingUserPicker = true
-                                } label: {
-                                    HStack {
-                                        Text("Select Users")
-                                        Spacer()
-                                        if !selectedACLUsers.isEmpty {
-                                            Text("\(selectedACLUsers.count) selected")
-                                                .foregroundColor(.secondary)
-                                        }
-                                        Image(systemName: "chevron.right")
-                                            .foregroundColor(.secondary)
-                                            .font(.caption)
-                                    }
-                                    .padding(16)
-                                    .background(Color(.systemBackground))
-                                    .cornerRadius(16)
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 16)
-                                
-                                if selectedACLUsers.isEmpty {
-                                    Text("Please select at least one user for custom visibility")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 16)
-                                }
+                            if visibility == .private {
+                                Text("Only you can see this goal")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 4)
                             }
+                            
                             
                             Text("Public lists can be seen by anyone in the Discovery feed.")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 16)
+                        }
+                        .padding(.top, 8)
+                        
+                        // Draft Toggle Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Toggle(isOn: $saveAsDraft) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Save as Draft")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        Text("Save this list as a draft to publish later")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .toggleStyle(SwitchToggleStyle(tint: .blue))
+                            }
+                            .padding(16)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(16)
+                            
+                        }
+                        .padding(.top, 8)
+                        
+                        // Tag Friends Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Tag Friends")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 16)
+                            
+                            Button {
+                                showingFriendPicker = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "person.badge.plus")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(.blue)
+                                    
+                                    if taggedUsers.isEmpty {
+                                        Text("Tag friends in this goal")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.primary)
+                                    } else {
+                                        Text("\(taggedUsers.count) friend\(taggedUsers.count == 1 ? "" : "s") tagged")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.primary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(16)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(16)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            
+                            if !taggedUsers.isEmpty {
+                                Text("Tagged friends will see this goal in their feed and in pinned goals")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                            }
                         }
                         .padding(.top, 8)
                         
@@ -535,21 +588,20 @@ struct CreateGoalView: View {
                         .fill(Color(.separator))
                         .frame(height: 1)
                     
-                    HStack(spacing: 12) {
                         Button {
                             createGoal()
                         } label: {
                             HStack(spacing: 8) {
-                                Text("Create Bucketlist")
+                                Text(shouldBeDraft ? "Save Draft" : "Publish")
                                     .font(.system(size: 16, weight: .bold))
-                                Image(systemName: "arrow.right")
+                                Image(systemName: shouldBeDraft ? "square.and.arrow.down" : "arrow.right")
                                     .font(.system(size: 18))
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(
-                                (title.isEmpty || isCreating || (visibility == .custom && selectedACLUsers.isEmpty))
+                                (title.isEmpty || isCreating)
                                     ? Color.gray
                                     : Color.blue
                             )
@@ -557,28 +609,32 @@ struct CreateGoalView: View {
                             .shadow(color: Color.blue.opacity(0.2), radius: 8, x: 0, y: 4)
                         }
                         .buttonStyle(.plain)
-                        .disabled(title.isEmpty || isCreating || (visibility == .custom && selectedACLUsers.isEmpty))
+                        .disabled(title.isEmpty || isCreating)
                     }
                     .padding(16)
                     .background(.ultraThinMaterial)
                 }
             }
+            .sheet(isPresented: $showingImagePicker) {
+                ImagePickerView(selectedImage: $selectedCoverImage)
+            }
+            .sheet(isPresented: $showingFriendPicker) {
+                FriendPickerView(
+                    selectedUsers: $taggedUsers,
+                    userRoles: .constant([:]),
+                    friends: friends,
+                    isLoading: isLoadingFriends
+                )
+            }
+            .task {
+                await loadFriends()
+            }
         }
-        .sheet(isPresented: $showingUserPicker) {
-            UserPickerView(
-                selectedUsers: $selectedACLUsers,
-                userRoles: $userRoles
-            )
-        }
-        .sheet(isPresented: $showingImagePicker) {
-            ImagePickerView(selectedImage: $selectedCoverImage)
-        }
-    }
+    
+    
     
     private func deleteItem(at index: Int) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            items.remove(at: index)
-        }
+        items.remove(at: index)
     }
     
     private func addNewItem() {
@@ -586,17 +642,75 @@ struct CreateGoalView: View {
             return
         }
         
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            items.append(GoalItemDraft(title: newItemTitle))
-            newItemTitle = ""
-            isAddingItem = false
-        }
+        items.append(GoalItemDraft(title: newItemTitle))
+        newItemTitle = ""
+        isAddingItem = false
     }
     
     private func cancelAddItem() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            newItemTitle = ""
-            isAddingItem = false
+        newItemTitle = ""
+        isAddingItem = false
+    }
+    
+    // Computed property to determine if goal should be a draft
+    private var shouldBeDraft: Bool {
+        return saveAsDraft
+    }
+    
+    private func loadFriends() async {
+        guard let userId = authStore.userId else { return }
+        
+        await MainActor.run {
+            isLoadingFriends = true
+        }
+        
+        do {
+            let allFriendships: [Friendship] = try await supabaseService.client
+                .from("friendships")
+                .select()
+                .or("user_id_1.eq.\(userId.uuidString),user_id_2.eq.\(userId.uuidString)")
+                .eq("status", value: "accepted")
+                .execute()
+                .value
+            
+            var friendIds: Set<UUID> = []
+            for friendship in allFriendships {
+                if friendship.userId1 == userId {
+                    friendIds.insert(friendship.userId2)
+                } else {
+                    friendIds.insert(friendship.userId1)
+                }
+            }
+            
+            guard !friendIds.isEmpty else {
+                await MainActor.run {
+                    friends = []
+                    isLoadingFriends = false
+                }
+                return
+            }
+            
+            let profiles = try await supabaseService.getProfiles(userIds: Array(friendIds))
+            
+            var friendsWithStatus: [UserWithFriendshipStatus] = []
+            for profile in profiles {
+                friendsWithStatus.append(UserWithFriendshipStatus(
+                    profile: profile,
+                    friendshipStatus: .accepted,
+                    friendshipId: nil,
+                    isIncomingRequest: false
+                ))
+            }
+            
+            await MainActor.run {
+                friends = friendsWithStatus
+                isLoadingFriends = false
+            }
+        } catch {
+            print("Error loading friends: \(error)")
+            await MainActor.run {
+                isLoadingFriends = false
+            }
         }
     }
     
@@ -610,7 +724,7 @@ struct CreateGoalView: View {
         errorMessage = nil
         
         Task {
-            guard let userId = authStore.userId else {
+            guard authStore.userId != nil else {
                 await MainActor.run {
                     errorMessage = "User not authenticated"
                     isCreating = false
@@ -619,227 +733,72 @@ struct CreateGoalView: View {
             }
             
             do {
-                // Validate custom visibility
-                if visibility == .custom && selectedACLUsers.isEmpty {
-                    await MainActor.run {
-                        errorMessage = "Please select at least one user for custom visibility"
-                        isCreating = false
-                    }
-                    return
-                }
+                // Determine if this should be a draft
+                let isDraft = shouldBeDraft
                 
-                // Get session and ensure it's valid
-                var session = try await supabaseService.client.auth.session
-                let authenticatedUserId = session.user.id
+                // ACL logic removed for now to simplify
+                let aclUsers: [UUID: String] = [:]
                 
-                // === COMPREHENSIVE SESSION DEBUGGING ===
-                print("🔐 === AUTH DEBUGGING ===")
-                print("   Session User ID: \(session.user.id)")
-                print("   Session User Email: \(session.user.email ?? "none")")
-                print("   Session Expired: \(session.isExpired)")
-                print("   Session Expires At: \(session.expiresAt)")
-                print("   Access Token Length: \(session.accessToken.count)")
-                print("   Access Token (first 50): \(String(session.accessToken.prefix(50)))...")
-                print("   Auth Store User ID: \(String(describing: authStore.userId))")
-                print("   Provided userId matches: \(userId == authenticatedUserId)")
-                print("   Current timestamp: \(Date())")
-                
-                // Ensure the userId matches the authenticated user
-                guard userId == authenticatedUserId else {
-                    await MainActor.run {
-                        errorMessage = "User ID mismatch. Please sign in again."
-                        isCreating = false
-                    }
-                    return
-                }
-                
-                // Check if session is expired and refresh if needed
-                if session.isExpired {
-                    print("⚠️ Session expired, refreshing...")
-                    session = try await supabaseService.client.auth.refreshSession()
-                    print("✅ Session refreshed")
-                }
-                
-                // === TEST AUTH.UID() RESOLUTION ===
-                print("🧪 Testing auth.uid() resolution with profiles table...")
-                do {
-                    let testProfile: [Profile] = try await supabaseService.client
-                        .from("profiles")
-                        .select()
-                        .eq("id", value: authenticatedUserId)
-                        .execute()
-                        .value
-                    
-                    print("✅ Auth test PASSED: Found \(testProfile.count) profile(s)")
-                    print("   This means auth.uid() IS working for SELECT queries")
-                } catch {
-                    print("❌ Auth test FAILED: \(error)")
-                    print("   This means auth.uid() is NOT being resolved properly")
-                    await MainActor.run {
-                        errorMessage = "Authentication error. Please sign out and sign in again."
-                        isCreating = false
-                    }
-                    throw error
-                }
-                
-                // Insert goal using the Supabase client directly (it handles auth automatically)
-                struct GoalInsert: Encodable {
-                    let owner_id: UUID
-                    let title: String
-                    let body: String?
-                    let status: String
-                    let visibility: String
-                }
-                
-                let insertData = GoalInsert(
-                    owner_id: authenticatedUserId,
+                let params = SupabaseService.CreateGoalParams(
                     title: title,
                     body: goalBody.isEmpty ? nil : goalBody,
-                    status: GoalStatus.active.rawValue,
-                    visibility: visibility.rawValue
+                    visibility: visibility,
+                    isDraft: isDraft,
+                    items: items.map { $0.title },
+                    acl: aclUsers,
+                    coverImage: selectedCoverImage?.compressed(maxDimension: 1200, quality: 0.8)
                 )
                 
-                print("📝 Creating goal with data: \(insertData)")
-                print("   Owner ID: \(authenticatedUserId)")
-                print("   Title: \(title)")
-                print("   Visibility: \(visibility.rawValue)")
-                print("   Using RPC function call (workaround for auth.uid() NULL issue)")
+                let createdGoal = try await supabaseService.createGoal(params)
                 
-                // WORKAROUND: Use RPC function instead of direct INSERT
-                // This bypasses the auth.uid() NULL issue with Supabase Swift SDK INSERT operations
-                struct InsertGoalParams: Encodable {
-                    let p_title: String
-                    let p_body: String?
-                    let p_status: String
-                    let p_visibility: String
-                    let p_owner_id: UUID
+                // Tag users if any were selected
+                if !taggedUsers.isEmpty {
+                    try await messagingService.tagUsersInGoal(
+                        goalId: createdGoal.id,
+                        userIds: Array(taggedUsers)
+                    )
                 }
                 
-                let params = InsertGoalParams(
-                    p_title: title,
-                    p_body: goalBody.isEmpty ? nil : goalBody,
-                    p_status: GoalStatus.active.rawValue,
-                    p_visibility: visibility.rawValue,
-                    p_owner_id: authenticatedUserId
-                )
-                
-                // Call the insert_goal function via RPC
-                let newGoalId: UUID = try await supabaseService.client
-                    .rpc("insert_goal", params: params)
-                    .execute()
-                    .value
-                
-                print("✅ Goal created via RPC with ID: \(newGoalId)")
-                
-                // Fetch the created goal to get full details
-                let response: [Goal] = try await supabaseService.client
-                    .from("goals")
-                    .select()
-                    .eq("id", value: newGoalId)
-                    .execute()
-                    .value
-                
-                print("✅ Goal created successfully: \(response.first?.id.uuidString ?? "unknown")")
-                
-                guard let createdGoal = response.first else {
-                    throw NSError(domain: "GoalCreation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to retrieve created goal"])
-                }
-                
-                // Create ACL entries if custom visibility
-                if visibility == .custom {
-                    print("📋 Creating ACL entries for \(selectedACLUsers.count) users...")
-                    for userId in selectedACLUsers {
-                        let role = userRoles[userId] ?? "viewer"
-                        let acl = GoalACL(
-                            goalId: createdGoal.id,
-                            userId: userId,
-                            role: role
+                // Post notification if it's a draft or published
+                await MainActor.run {
+                    if createdGoal.isDraft {
+                        NotificationCenter.default.post(
+                            name: .draftCreatedNotification,
+                            object: nil,
+                            userInfo: ["goal": createdGoal]
                         )
-                        
-                        _ = try await supabaseService.client
-                            .from("goal_acl")
-                            .insert(acl, returning: .minimal)
-                            .execute()
-                    }
-                    print("✅ ACL entries created")
-                }
-                
-                // Create goal items
-                if !items.isEmpty {
-                    print("📋 Creating \(items.count) goal items...")
-                    struct GoalItemInsert: Encodable {
-                        let goal_id: UUID
-                        let title: String
-                        let completed: Bool
+                        print("📢 Posted draftCreatedNotification for goal \(createdGoal.id)")
+                    } else {
+                         NotificationCenter.default.post(
+                            name: .goalPublishedNotification, // Use the notification defined in extensions
+                            object: nil,
+                            userInfo: ["goal": createdGoal]
+                        )
                     }
                     
-                    for item in items {
-                        let itemInsert = GoalItemInsert(
-                            goal_id: createdGoal.id,
-                            title: item.title,
-                            completed: false
-                        )
-                        
-                        _ = try await supabaseService.client
-                            .from("goal_items")
-                            .insert(itemInsert, returning: .minimal)
-                            .execute()
-                    }
-                    print("✅ Goal items created")
-                }
-                
-                // Upload cover image if one was selected
-                if let selectedImage = selectedCoverImage,
-                   let imageData = selectedImage.compressed(maxDimension: 1200, quality: 0.8) {
-                    print("📤 Uploading cover image...")
-                    do {
-                        let imageUrl = try await supabaseService.uploadGoalCoverImage(
-                            goalId: createdGoal.id,
-                            imageData: imageData
-                        )
-                        
-                        // Update goal with image URL
-                        try await supabaseService.updateGoalCoverImageUrl(
-                            goalId: createdGoal.id,
-                            imageUrl: imageUrl
-                        )
-                        
-                        print("✅ Cover image uploaded and linked to goal")
-                    } catch {
-                        print("⚠️ Failed to upload cover image: \(error)")
-                        // Don't fail the entire goal creation if image upload fails
-                    }
-                }
-                
-                await MainActor.run {
                     isCreating = false
                     dismiss()
                 }
             } catch {
+                // #region agent log
+                let logPath = "/Users/joshuawang/mvp1/.cursor/debug.log"
+                let logData: [String: Any] = ["function": "CreateGoalView.createGoal", "step": "error", "error": error.localizedDescription, "errorType": String(describing: type(of: error)), "errorDetails": String(describing: error), "timestamp": Date().timeIntervalSince1970]
+                if let logJson = try? JSONSerialization.data(withJSONObject: logData), let logStr = String(data: logJson, encoding: .utf8) {
+                    try? FileManager.default.createDirectory(atPath: "/Users/joshuawang/mvp1/.cursor", withIntermediateDirectories: true, attributes: nil)
+                    if FileManager.default.fileExists(atPath: logPath), let fileHandle = FileHandle(forWritingAtPath: logPath) {
+                        fileHandle.seekToEndOfFile()
+                        fileHandle.write((logStr + "\n").data(using: .utf8)!)
+                        fileHandle.closeFile()
+                    } else {
+                        try? (logStr + "\n").write(toFile: logPath, atomically: false, encoding: .utf8)
+                    }
+                }
+                // #endregion
                 print("❌ Error creating goal: \(error)")
-                print("   Error type: \(type(of: error))")
-                print("   Error description: \(String(describing: error))")
-                
-                // Check if it's an RLS error
-                let errorString = String(describing: error)
-                if errorString.contains("42501") || errorString.contains("row-level security") {
-                    print("⚠️ RLS POLICY ERROR DETECTED")
-                    print("   This means auth.uid() is not matching owner_id in the INSERT policy")
-                    print("   Possible causes:")
-                    print("   1. Migration 005 hasn't been run in Supabase dashboard")
-                    print("   2. JWT token isn't being sent correctly")
-                    print("   3. RLS policy configuration issue")
-                    
-                    await MainActor.run {
-                        isCreating = false
-                        errorMessage = "Permission denied. Please ensure:\n1. You're signed in\n2. Database migration 005 is applied\n3. Try signing out and back in"
-                    }
-                } else {
-                    await MainActor.run {
-                        isCreating = false
-                        let errorDesc = error.localizedDescription.isEmpty ? String(describing: error) : error.localizedDescription
-                        errorMessage = "Failed to create goal: \(errorDesc)"
-                    }
+                await MainActor.run {
+                    isCreating = false
+                    let errorDesc = error.localizedDescription.isEmpty ? String(describing: error) : error.localizedDescription
+                    errorMessage = "Failed to create goal: \(errorDesc)"
                 }
             }
         }

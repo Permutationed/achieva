@@ -1,6 +1,6 @@
 //
 //  GoalItem.swift
-//  Bucketlist
+//  Achieva
 //
 //  Goal item model matching backend schema
 //

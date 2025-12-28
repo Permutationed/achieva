@@ -1,6 +1,6 @@
 //
 //  User.swift
-//  Bucketlist
+//  Achieva
 //
 //  Simple user model
 //

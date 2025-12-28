@@ -1,6 +1,6 @@
 //
 //  EditGoalView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Edit existing goal view — redesigned to match CreateGoalView UI
 //
@@ -97,6 +97,9 @@ struct EditGoalView: View {
     @ObservedObject var supabaseService = SupabaseService.shared
 
     let goal: Goal
+    @State private var canEdit = false
+    @State private var isOwner = false
+    @State private var isLoadingPermissions = true
 
     @State private var title: String
     @State private var goalBody: String
@@ -109,6 +112,15 @@ struct EditGoalView: View {
     @State private var showingUserPicker = false
     @State private var originalVisibility: GoalVisibility
     @State private var showingDeleteConfirmation = false
+    @StateObject private var messagingService = MessagingService.shared
+    
+    // Tagging
+    @State private var taggedUsers: Set<UUID> = []
+    @State private var showingFriendPicker = false
+    
+    // Friends for custom visibility
+    @State private var friends: [UserWithFriendshipStatus] = []
+    @State private var isLoadingFriends = false
     
     // Cover image
     @State private var selectedCoverImage: UIImage?
@@ -139,7 +151,7 @@ struct EditGoalView: View {
 
                     Spacer()
 
-                    Text("Edit Bucketlist")
+                    Text(goal.isDraft ? "Edit Draft" : "Edit Achieva")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(.primary)
 
@@ -334,6 +346,23 @@ struct EditGoalView: View {
                                 )
                         }
                         .padding(.horizontal, 16)
+                        
+                        // Draft Badge (if draft)
+                        if goal.isDraft {
+                            HStack {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.orange)
+                                Text("DRAFT")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.orange)
+                                Spacer()
+                            }
+                            .padding(16)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(12)
+                            .padding(.horizontal, 16)
+                        }
 
                         // Status Section (card)
                         VStack(alignment: .leading, spacing: 12) {
@@ -401,13 +430,31 @@ struct EditGoalView: View {
                                 .buttonStyle(.plain)
 
                                 Button {
+                                    handleVisibilityChange(from: visibility, to: .private)
+                                    visibility = .private
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 18))
+                                        Text("Private")
+                                            .font(.system(size: 14, weight: visibility == .private ? .bold : .medium))
+                                    }
+                                    .foregroundColor(visibility == .private ? .blue : .secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(visibility == .private ? Color(.systemBackground) : Color.clear)
+                                    .cornerRadius(24)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button {
                                     handleVisibilityChange(from: visibility, to: .custom)
                                     visibility = .custom
                                 } label: {
                                     HStack(spacing: 8) {
-                                        Image(systemName: "lock")
+                                        Image(systemName: "person.2.badge.gearshape")
                                             .font(.system(size: 18))
-                                        Text("Private")
+                                        Text("Custom")
                                             .font(.system(size: 14, weight: visibility == .custom ? .bold : .medium))
                                     }
                                     .foregroundColor(visibility == .custom ? .blue : .secondary)
@@ -422,7 +469,15 @@ struct EditGoalView: View {
                             .background(Color(.systemGray6))
                             .cornerRadius(24)
                             .padding(.horizontal, 16)
-
+                            
+                            if visibility == .private {
+                                Text("Only you can see this goal")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 4)
+                            }
+                            
                             if visibility == .custom {
                                 Button {
                                     showingUserPicker = true
@@ -461,39 +516,88 @@ struct EditGoalView: View {
                         }
                         .padding(.top, 8)
 
-                        // Delete Goal Section
+                        // Tag Friends Section
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Danger Zone")
+                            Text("Tag Friends")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.primary)
                                 .padding(.horizontal, 16)
                             
                             Button {
-                                showingDeleteConfirmation = true
+                                showingFriendPicker = true
                             } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "trash.fill")
+                                HStack {
+                                    Image(systemName: "person.badge.plus")
                                         .font(.system(size: 18))
-                                        .foregroundColor(.red)
+                                        .foregroundColor(.blue)
                                     
-                                    Text("Delete Goal")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .foregroundColor(.red)
+                                    if taggedUsers.isEmpty {
+                                        Text("Tag friends in this goal")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.primary)
+                                    } else {
+                                        Text("\(taggedUsers.count) friend\(taggedUsers.count == 1 ? "" : "s") tagged")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.primary)
+                                    }
                                     
                                     Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
                                 }
                                 .padding(16)
                                 .background(Color(.systemBackground))
                                 .cornerRadius(16)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                                )
                             }
                             .buttonStyle(.plain)
                             .padding(.horizontal, 16)
+                            
+                            if !taggedUsers.isEmpty {
+                                Text("Tagged friends will see this goal in their feed and in pinned goals")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                            }
                         }
                         .padding(.top, 8)
+                        
+                        // Delete Goal Section (only for owner)
+                        if isOwner {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Danger Zone")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.primary)
+                                    .padding(.horizontal, 16)
+                                
+                                Button {
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "trash.fill")
+                                            .font(.system(size: 18))
+                                            .foregroundColor(.red)
+                                        
+                                        Text("Delete Goal")
+                                            .font(.system(size: 17, weight: .semibold))
+                                            .foregroundColor(.red)
+                                        
+                                        Spacer()
+                                    }
+                                    .padding(16)
+                                    .background(Color(.systemBackground))
+                                    .cornerRadius(16)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
+                            }
+                            .padding(.top, 8)
+                        }
                         
                         Spacer().frame(height: 110)
                     }
@@ -510,9 +614,9 @@ struct EditGoalView: View {
                             updateGoal()
                         } label: {
                             HStack(spacing: 8) {
-                                Text(isUpdating ? "Saving..." : "Save Changes")
+                                Text(isUpdating ? (goal.isDraft ? "Publishing..." : "Saving...") : (goal.isDraft ? "Publish" : "Save Changes"))
                                     .font(.system(size: 16, weight: .bold))
-                                Image(systemName: "arrow.right")
+                                Image(systemName: goal.isDraft ? "paperplane.fill" : "arrow.right")
                                     .font(.system(size: 18))
                             }
                             .foregroundColor(.white)
@@ -535,18 +639,23 @@ struct EditGoalView: View {
             }
         }
         .sheet(isPresented: $showingUserPicker) {
-            UserPickerView(
+            FriendPickerView(
                 selectedUsers: $selectedACLUsers,
-                userRoles: $userRoles
+                userRoles: $userRoles,
+                friends: friends,
+                isLoading: isLoadingFriends
             )
         }
         .sheet(isPresented: $showingImagePicker) {
             ImagePickerView(selectedImage: $selectedCoverImage)
         }
         .task {
+            await checkPermissions()
+            await loadFriends()
             if goal.visibility == .custom {
                 await loadACL()
             }
+            await loadTags()
         }
         .alert("Delete Goal", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -556,15 +665,22 @@ struct EditGoalView: View {
         } message: {
             Text("Are you sure you want to delete this goal? This action cannot be undone.")
         }
+        .sheet(isPresented: $showingFriendPicker) {
+            FriendPickerView(
+                selectedUsers: $taggedUsers,
+                userRoles: .constant([:]),
+                friends: friends,
+                isLoading: isLoadingFriends
+            )
+        }
     }
+    
 
     // MARK: - UI Helpers
 
     private func statusRow(title: String, icon: String, value: GoalStatus) -> some View {
         Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                status = value
-            }
+            status = value
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -603,6 +719,56 @@ struct EditGoalView: View {
         }
     }
 
+    private func loadFriends() async {
+        guard let userId = authStore.userId else { return }
+        
+        await MainActor.run {
+            isLoadingFriends = true
+        }
+        
+        do {
+            // Load friendships
+            let allFriendships = try await supabaseService.getFriends(forUserId: userId)
+            
+            // Get friend user IDs
+            let friendIds = allFriendships.map { friendship in
+                friendship.userId1 == userId ? friendship.userId2 : friendship.userId1
+            }
+            
+            guard !friendIds.isEmpty else {
+                await MainActor.run {
+                    self.friends = []
+                    self.isLoadingFriends = false
+                }
+                return
+            }
+            
+            // Load friend profiles
+            let friendProfiles: [Profile] = try await supabaseService.getProfiles(userIds: friendIds)
+            
+            // Create UserWithFriendshipStatus for each friend
+            let friendsList = friendProfiles.map { profile in
+                UserWithFriendshipStatus(
+                    profile: profile,
+                    friendshipStatus: .accepted,
+                    friendshipId: nil,
+                    isIncomingRequest: false
+                )
+            }
+            
+            await MainActor.run {
+                self.friends = friendsList
+                self.isLoadingFriends = false
+            }
+        } catch {
+            print("Error loading friends: \(error)")
+            await MainActor.run {
+                self.friends = []
+                self.isLoadingFriends = false
+            }
+        }
+    }
+    
     private func loadACL() async {
         do {
             let aclEntries: [GoalACL] = try await supabaseService.client
@@ -642,13 +808,18 @@ struct EditGoalView: View {
                     let body: String?
                     let status: String
                     let visibility: String
+                    let is_draft: Bool?
                 }
 
+                // If it's a draft and user is saving, publish it (set is_draft to false)
+                let shouldPublish = goal.isDraft
+                
                 let updateData = GoalUpdate(
                     title: title,
                     body: goalBody.isEmpty ? nil : goalBody,
                     status: status.rawValue,
-                    visibility: visibility.rawValue
+                    visibility: visibility.rawValue,
+                    is_draft: shouldPublish ? false : nil // Only update if publishing
                 )
 
                 try await supabaseService.client
@@ -656,6 +827,11 @@ struct EditGoalView: View {
                     .update(updateData)
                     .eq("id", value: goal.id)
                     .execute()
+                
+                // If publishing a collaborative draft, remove unapproved collaborators
+                if shouldPublish {
+                    try await supabaseService.publishDraft(goalId: goal.id)
+                }
 
                 if originalVisibility == .custom && visibility != .custom {
                     try await supabaseService.client
@@ -711,6 +887,9 @@ struct EditGoalView: View {
                     }
                 }
 
+                // Sync tags after goal update
+                try await syncTags()
+                
                 await MainActor.run {
                     isUpdating = false
                     dismiss()
@@ -720,6 +899,74 @@ struct EditGoalView: View {
                     isUpdating = false
                     errorMessage = "Failed to update goal: \(error.localizedDescription)"
                 }
+            }
+        }
+    }
+    
+    private func loadTags() async {
+        do {
+            let tags: [GoalTag] = try await supabaseService.client
+                .from("goal_tags")
+                .select()
+                .eq("goal_id", value: goal.id)
+                .execute()
+                .value
+            
+            await MainActor.run {
+                self.taggedUsers = Set(tags.map { $0.userId })
+            }
+        } catch {
+            print("⚠️ Error loading tags: \(error)")
+        }
+    }
+    
+    private func syncTags() async throws {
+        // Get current tags from database
+        let currentTags: [GoalTag] = try await supabaseService.client
+            .from("goal_tags")
+            .select()
+            .eq("goal_id", value: goal.id)
+            .execute()
+            .value
+        
+        let currentTaggedUserIds = Set(currentTags.map { $0.userId })
+        let newTaggedUserIds = taggedUsers
+        
+        // Find tags to remove
+        let tagsToRemove = currentTaggedUserIds.subtracting(newTaggedUserIds)
+        
+        // Find tags to add
+        let tagsToAdd = newTaggedUserIds.subtracting(currentTaggedUserIds)
+        
+        // Remove deleted tags
+        if !tagsToRemove.isEmpty {
+            for userId in tagsToRemove {
+                try await supabaseService.client
+                    .from("goal_tags")
+                    .delete()
+                    .eq("goal_id", value: goal.id)
+                    .eq("user_id", value: userId)
+                    .execute()
+            }
+        }
+        
+        // Add new tags (need conversation_id for each tag)
+        if !tagsToAdd.isEmpty {
+            let messagingService = MessagingService.shared
+            
+            // For each user to tag, we need to find or create a conversation
+            for userId in tagsToAdd {
+                // Find existing conversation with this user
+                let conversations = try await messagingService.getConversations()
+                let directConversation = conversations.first { conv in
+                    conv.type == .direct && conv.otherParticipantProfile?.id == userId
+                }
+                
+                // tagUsersInGoal will create/find the conversation automatically
+                try await messagingService.tagUsersInGoal(
+                    goalId: goal.id,
+                    userIds: [userId]
+                )
             }
         }
     }
@@ -745,6 +992,31 @@ struct EditGoalView: View {
         }
     }
 
+    private func checkPermissions() async {
+        guard let userId = authStore.userId else {
+            await MainActor.run {
+                canEdit = false
+                isOwner = false
+                isLoadingPermissions = false
+            }
+            return
+        }
+        
+        // Check if user is owner
+        let owner = goal.ownerId == userId
+        
+        // For proposed goals, allow editing if user is any collaborator (pending/accepted/declined)
+        // For other goals, only allow editing if user is accepted collaborator
+        // Only owners can edit goals (no collaborators)
+        let isCollaborator = false
+        
+        await MainActor.run {
+            isOwner = owner
+            canEdit = owner || isCollaborator
+            isLoadingPermissions = false
+        }
+    }
+    
     private func syncACL() async throws {
         do {
             let currentACL: [GoalACL] = try await supabaseService.client
@@ -795,6 +1067,8 @@ struct EditGoalView: View {
         }
     }
 }
+
+// MARK: - Publish Goal View
 
 #Preview {
     EditGoalView(goal: Goal(

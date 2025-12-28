@@ -1,6 +1,6 @@
-name: Bucketlist
+name: Achieva
 options:
-  bundleIdPrefix: com.bucketlist
+  bundleIdPrefix: com.achieva
   deploymentTarget:
     iOS: "17.0"
   developmentLanguage: en
@@ -12,7 +12,7 @@ packages:
     from: 2.0.0
   
 targets:
-  Bucketlist:
+  Achieva:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
@@ -22,6 +22,9 @@ targets:
           - "**/*.md"
           - "**/*.txt"
           - "**/*.sh"
+          - "**/*.log"
+          - "**/*.png"
+          - "**/*.xcodeproj"
           - "**/.cursor/**"
           - "**/.git/**"
           - "**/.env"
@@ -30,12 +33,15 @@ targets:
           - "build/**"
           - "DerivedData/**"
           - ".derivedData/**"
+          - "AchievaUITests/**"
+          - "TestResults.xcresult/**"
+          - "node_modules/**"
     resources: []
     info:
       path: Info.plist
       properties:
         CFBundleDevelopmentRegion: en
-        CFBundleDisplayName: Bucketlist
+        CFBundleDisplayName: Achieva
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleInfoDictionaryVersion: "6.0"
@@ -62,8 +68,8 @@ targets:
         product: Supabase
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.bucketlist.app
-        PRODUCT_NAME: Bucketlist
+        PRODUCT_BUNDLE_IDENTIFIER: com.achieva.app
+        PRODUCT_NAME: Achieva
         SWIFT_VERSION: "5.9"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         TARGETED_DEVICE_FAMILY: "1" # iPhone only
@@ -75,4 +81,43 @@ targets:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
         GCC_OPTIMIZATION_LEVEL: 0 # Debug optimization
         SWIFT_COMPILATION_MODE: singlefile
+
+  AchievaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.achieva.uitests
+        TEST_TARGET_NAME: Achieva
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_TESTING_SEARCH_PATHS: YES
+    sources:
+        - path: AchievaUITests
+    dependencies:
+      - target: Achieva
+      - sdk: XCTest.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.achieva.uitests
+        TEST_TARGET_NAME: Achieva
+
+schemes:
+  Achieva:
+    build:
+      targets:
+        Achieva: all
+        AchievaUITests: all
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - AchievaUITests
+    profile:
+      config: Release
+    run:
+      config: Debug
+    archive:
+      config: Release
+
 

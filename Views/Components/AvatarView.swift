@@ -1,6 +1,6 @@
 //
 //  AvatarView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Simple initials-based avatar (no mock remote images).
 //
@@ -10,6 +10,7 @@ import SwiftUI
 struct AvatarView: View {
     let name: String
     var size: CGFloat = 36
+    var avatarUrl: String? = nil
 
     private var initials: String {
         let parts = name
@@ -24,6 +25,25 @@ struct AvatarView: View {
     }
 
     var body: some View {
+        Group {
+            if let avatarUrl = avatarUrl, let url = URL(string: avatarUrl) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    fallbackAvatar
+                }
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+            } else {
+                fallbackAvatar
+            }
+        }
+        .accessibilityLabel(Text("Avatar"))
+    }
+    
+    private var fallbackAvatar: some View {
         ZStack {
             Circle()
                 .fill(
@@ -41,7 +61,6 @@ struct AvatarView: View {
                 .foregroundColor(.white)
         }
         .frame(width: size, height: size)
-        .accessibilityLabel(Text("Avatar"))
     }
 }
 

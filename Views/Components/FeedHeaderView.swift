@@ -1,6 +1,6 @@
 //
 //  FeedHeaderView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Header for the feed, inspired by the provided HTML.
 //
@@ -32,6 +32,7 @@ struct FeedHeaderView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Notifications"))
+                .accessibilityIdentifier("NotificationsButton")
 
                 Button {
                     onProfileTap?()

@@ -1,6 +1,6 @@
 //
 //  GoalItemRow.swift
-//  Bucketlist
+//  Achieva
 //
 //  Component to display a single goal item (checklist item)
 //

@@ -1,6 +1,6 @@
 //
 //  ProfileView.swift
-//  Bucketlist
+//  Achieva
 //
 //  Profile view redesigned to match HTML design
 //
@@ -13,24 +13,37 @@ struct ProfileView: View {
     @ObservedObject var supabaseService = SupabaseService.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showingEditProfile = false
-    @State private var showingSignOut = false
     @State private var goals: [Goal] = []
+    @State private var draftGoals: [Goal] = []
     @State private var friendsCount: Int = 0
     @State private var isLoading = false
+    @State private var isLoadingDrafts = false
     @State private var selectedCategory: String = "All Goals"
     @State private var showingCreateGoal = false
     @State private var editingGoal: Goal?
     @State private var showingDeleteConfirmation = false
     @State private var goalToDelete: Goal?
+    @State private var isLoadingRequests = false
+    @State private var likesByGoalId: [UUID: (count: Int, isLiked: Bool)] = [:]
+    @State private var commentCountsByGoalId: [UUID: Int] = [:]
+    @State private var taggedUsersByGoalId: [UUID: Set<UUID>] = [:]
+    @State private var showingNotifications = false
+    
+    // Pagination state
+    @State private var isLoadingMore = false
+    @State private var hasMoreGoals = true
+    private let pageSize = 20
     
     var filteredGoals: [Goal] {
         switch selectedCategory {
         case "Active Goals":
-            return goals.filter { $0.status == .active }
+            return goals.filter { $0.status == .active && !$0.isDraft }
         case "Completed Goals":
-            return goals.filter { $0.status == .completed }
+            return goals.filter { $0.status == .completed && !$0.isDraft }
+        case "Drafts":
+            return draftGoals
         default: // "All Goals"
-            return goals
+            return goals.filter { !$0.isDraft }
         }
     }
     
@@ -38,8 +51,11 @@ struct ProfileView: View {
         filteredGoals.count
     }
     
+    var totalLikes: Int {
+        likesByGoalId.values.reduce(0) { $0 + $1.count }
+    }
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack(alignment: .bottomTrailing) {
                 Color(.systemGroupedBackground)
                     .ignoresSafeArea()
@@ -51,8 +67,9 @@ struct ProfileView: View {
                             // Avatar with edit button
                             ZStack(alignment: .bottomTrailing) {
                                 AvatarView(
-                                    name: authStore.profile?.displayName ?? "User",
-                                    size: 96
+                                    name: authStore.profile?.fullName ?? "User",
+                                    size: 96,
+                                    avatarUrl: authStore.profile?.avatarUrl
                                 )
                                 .overlay(
                                     Circle()
@@ -79,7 +96,7 @@ struct ProfileView: View {
                             
                             // Name and username
                             VStack(spacing: 8) {
-                                Text(authStore.profile?.displayName ?? "User")
+                                Text(authStore.profile?.fullName ?? "User")
                                     .font(.system(size: 24, weight: .bold))
                                     .foregroundColor(.primary)
                                 
@@ -88,7 +105,7 @@ struct ProfileView: View {
                                     .foregroundColor(.secondary)
                                 
                                 // Bio placeholder (no bio field in Profile model yet)
-                                if let profile = authStore.profile {
+                                if authStore.profile != nil {
                                     Text("")
                                         .font(.system(size: 14))
                                         .foregroundColor(.secondary)
@@ -101,42 +118,7 @@ struct ProfileView: View {
                             HStack(spacing: 12) {
                                 StatCard(value: "\(goalsCount)", label: "Goals")
                                 StatCard(value: "\(friendsCount)", label: "Friends")
-                                StatCard(value: "0", label: "Likes")
-                            }
-                            .padding(.horizontal, 24)
-                            
-                            // Action Buttons
-                            HStack(spacing: 12) {
-                                Button {
-                                    showingEditProfile = true
-                                } label: {
-                                    Text("Edit Profile")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .background(Color(.label))
-                                        .cornerRadius(12)
-                                        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Button {
-                                    showingSignOut = true
-                                } label: {
-                                    Text("Sign Out")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.primary)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .background(Color(.systemBackground))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Color(.separator), lineWidth: 1)
-                                        )
-                                        .cornerRadius(12)
-                                }
-                                .buttonStyle(.plain)
+                                StatCard(value: "\(totalLikes)", label: "Likes")
                             }
                             .padding(.horizontal, 24)
                         }
@@ -144,8 +126,7 @@ struct ProfileView: View {
                         .padding(.bottom, 24)
                         
                         // Category Filters
-                        HStack {
-                            Spacer()
+                        ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 CategoryChip(title: "All Goals", isSelected: selectedCategory == "All Goals") {
                                     selectedCategory = "All Goals"
@@ -156,10 +137,15 @@ struct ProfileView: View {
                                 CategoryChip(title: "Completed", isSelected: selectedCategory == "Completed Goals") {
                                     selectedCategory = "Completed Goals"
                                 }
+                                CategoryChip(title: "Archived", isSelected: selectedCategory == "Archived Goals") {
+                                    selectedCategory = "Archived Goals"
+                                }
+                                CategoryChip(title: "Drafts", isSelected: selectedCategory == "Drafts") {
+                                    selectedCategory = "Drafts"
+                                }
                             }
-                            Spacer()
+                            .padding(.horizontal, 24)
                         }
-                        .padding(.horizontal, 24)
                         .padding(.bottom, 16)
                         
                         // Bucket List Section (Goals)
@@ -198,18 +184,58 @@ struct ProfileView: View {
                                 VStack(spacing: 16) {
                                     ForEach(filteredGoals) { goal in
                                         NavigationLink(destination: GoalDetailView(goal: goal)) {
+                                            let likesData = likesByGoalId[goal.id] ?? (count: 0, isLiked: false)
                                             FeedGoalCardView(
                                                 goal: goal,
-                                                ownerDisplayName: authStore.profile?.displayName,
-                                                ownerUsername: authStore.profile?.username
+                                                ownerDisplayName: authStore.profile?.fullName,
+                                                ownerUsername: authStore.profile?.username,
+                                                ownerProfile: authStore.profile,
+                                                collaboratorProfiles: [:],
+                                                taggedUserIds: taggedUsersByGoalId[goal.id],
+                                                isLiked: likesData.isLiked,
+                                                likesCount: likesData.count,
+                                                commentsCount: commentCountsByGoalId[goal.id] ?? 0,
+                                                onLikeTap: {
+                                                    handleLikeToggle(goalId: goal.id, currentIsLiked: likesData.isLiked)
+                                                },
+                                                onShareTap: {
+                                                    ShareHelper.shareGoal(
+                                                        goal: goal,
+                                                        ownerName: authStore.profile?.fullName,
+                                                        isOwnGoal: true
+                                                    )
+                                                }
                                             )
                                         }
                                         .buttonStyle(.plain)
+                                        .accessibilityIdentifier(goal.title)
+                                        .onAppear {
+                                            // Load more when approaching the end (only for "All Goals" or "Active Goals")
+                                            if (selectedCategory == "All Goals" || selectedCategory == "Active Goals"),
+                                               let index = filteredGoals.firstIndex(where: { $0.id == goal.id }),
+                                               index >= filteredGoals.count - 3,
+                                               hasMoreGoals,
+                                               !isLoadingMore {
+                                                Task {
+                                                    await loadMoreProfileGoals()
+                                                }
+                                            }
+                                        }
                                         .contextMenu {
                                             Button {
                                                 editingGoal = goal
                                             } label: {
                                                 Label("Edit", systemImage: "pencil")
+                                            }
+                                            
+                                            if goal.isDraft {
+                                                Button {
+                                                    Task {
+                                                        await publishDraft(goal)
+                                                    }
+                                                } label: {
+                                                    Label("Publish", systemImage: "paperplane")
+                                                }
                                             }
                                             
                                             Button(role: .destructive) {
@@ -219,6 +245,18 @@ struct ProfileView: View {
                                                 Label("Delete", systemImage: "trash")
                                             }
                                         }
+                                    }
+                                    
+                                    // Loading indicator for pagination
+                                    if isLoadingMore {
+                                        ProgressView()
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                    } else if !hasMoreGoals && !filteredGoals.isEmpty && (selectedCategory == "All Goals" || selectedCategory == "Active Goals") {
+                                        Text("No more goals to load")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .padding()
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -236,17 +274,14 @@ struct ProfileView: View {
                     ZStack(alignment: .leading) {
                         FeedHeaderView(
                             title: "Your Profile",
-                            currentUserDisplayName: authStore.profile?.displayName ?? authStore.profile?.username ?? "You",
+                            currentUserDisplayName: authStore.profile?.fullName ?? authStore.profile?.username ?? "You",
                             onNotificationsTap: {
-                                showingEditProfile = true
+                                showingNotifications = true
                             },
                             onProfileTap: {
                                 showingEditProfile = true
                             }
                         )
-                        
-                        // Back button overlay (only functional when presented as sheet)
-     
                     }
                 }
                 
@@ -264,13 +299,39 @@ struct ProfileView: View {
                 .padding(.trailing, 16)
                 .padding(.bottom, 18)
                 .accessibilityLabel(Text("Create goal"))
+                .accessibilityIdentifier("CreateGoalButton")
             }
         }
         .task {
             await loadProfileData()
+            await loadDrafts()
         }
         .refreshable {
             await loadProfileData()
+            await loadDrafts()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalPublishedNotification)) { _ in
+            Task {
+                await loadProfileData()
+                await loadDrafts()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .draftCreatedNotification)) { notification in
+            // Immediately add the draft to local cache
+            if let goal = notification.userInfo?["goal"] as? Goal {
+                Task {
+                    await MainActor.run {
+                        // Add to draftGoals if not already present
+                        if !draftGoals.contains(where: { $0.id == goal.id }) {
+                            draftGoals.insert(goal, at: 0) // Insert at beginning
+                            print("✅ Added draft to local cache: \(goal.title)")
+                        }
+                    }
+                    
+                    // Also load full details in background to ensure we have everything
+                    await loadDrafts()
+                }
+            }
         }
         .sheet(isPresented: $showingEditProfile) {
             EditProfileView()
@@ -284,6 +345,8 @@ struct ProfileView: View {
             CreateGoalView()
                 .onDisappear {
                     Task {
+                        // Refresh both published goals and drafts
+                        await loadDrafts()
                         await loadProfileData()
                     }
                 }
@@ -309,15 +372,8 @@ struct ProfileView: View {
         } message: {
             Text("Are you sure you want to delete this goal? This action cannot be undone.")
         }
-        .alert("Sign Out", isPresented: $showingSignOut) {
-            Button("Cancel", role: .cancel) {}
-            Button("Sign Out", role: .destructive) {
-                Task {
-                    try? await authStore.signOut()
-                }
-            }
-        } message: {
-            Text("Are you sure you want to sign out?")
+        .sheet(isPresented: $showingNotifications) {
+            NotificationsView()
         }
     }
     
@@ -329,59 +385,179 @@ struct ProfileView: View {
         }
         
         do {
-            // Load user's goals with items
-            let goalsResponse: [Goal] = try await supabaseService.client
-                .from("goals")
-                .select("*, items:goal_items(*)")
-                .eq("owner_id", value: userId)
-                .order("created_at", ascending: false)
-                .execute()
-                .value
-            
-            // Load friends count
-            let friendships1: [Friendship] = try await supabaseService.client
-                .from("friendships")
-                .select()
-                .eq("user_id_1", value: userId)
-                .eq("status", value: "accepted")
-                .execute()
-                .value
-            
-            let friendships2: [Friendship] = try await supabaseService.client
-                .from("friendships")
-                .select()
-                .eq("user_id_2", value: userId)
-                .eq("status", value: "accepted")
-                .execute()
-                .value
-            
-            let friendsCount = friendships1.count + friendships2.count
-            
-            // Sync goal statuses based on items completion
-            var syncedGoals: [Goal] = []
-            for goal in goalsResponse {
-                do {
-                    let syncedGoal = try await supabaseService.syncGoalStatusIfNeeded(goal: goal)
-                    syncedGoals.append(syncedGoal)
-                } catch {
-                    // If sync fails, use original goal
-                    print("Warning: Failed to sync status for goal \(goal.id): \(error)")
-                    syncedGoals.append(goal)
+            guard let currentUserId = authStore.userId else {
+                await MainActor.run {
+                    self.isLoading = false
                 }
+                return
             }
+            
+            // Step 1: Load first page of owned goals and friends count in parallel
+            async let ownedGoalsTask = supabaseService.fetchGoalsWithItems(filterOwnerId: currentUserId, limit: pageSize, offset: 0)
+            
+            async let friendsCountTask: Int = {
+                let friendships: [Friendship] = try await supabaseService.client
+                    .from("friendships")
+                    .select()
+                    .or("user_id_1.eq.\(userId.uuidString),user_id_2.eq.\(userId.uuidString)")
+                    .eq("status", value: "accepted")
+                    .execute()
+                    .value
+                return friendships.count
+            }()
+            
+            // Wait for parallel loads
+            let ownedGoals = try await ownedGoalsTask
+            let friendsCount = try await friendsCountTask
+            
+            // Filter out drafts
+            let goalsResponse = ownedGoals.filter { !$0.isDraft }
+            
+            // Check if there are more goals to load
+            await MainActor.run {
+                hasMoreGoals = goalsResponse.count == pageSize
+            }
+            
+            print("📊 Profile: Loaded \(goalsResponse.count) published owned goals")
+            
+            // Step 2: Batch load all collaborators for all goals (already included from fetchGoalsWithItems)
+            // Goals from fetchGoalsWithItems already have collaborators loaded, so we can use them directly
+            var goalsWithCollaborators = goalsResponse
+            
+            // Step 3: Parallelize status syncing, collaboration requests, likes, and comments
+            let goalIds = goalsWithCollaborators.map { $0.id }
+            
+            // Optimize: Only sync status for goals that actually need it
+            let goalsToSync = goalsWithCollaborators.filter { goal in
+                guard let items = goal.items, !items.isEmpty else { return false }
+                let allCompleted = items.allSatisfy { $0.completed }
+                return (allCompleted && goal.status != .completed) || (!allCompleted && goal.status == .completed)
+            }
+            
+            async let syncedGoalsTask: [Goal] = {
+                guard !goalsToSync.isEmpty else { return goalsWithCollaborators }
+                
+                return await withTaskGroup(of: Goal.self, returning: [Goal].self) { group in
+                    var syncedMap: [UUID: Goal] = [:]
+                    
+                    for goal in goalsToSync {
+                        group.addTask {
+                            do {
+                                return try await supabaseService.syncGoalStatusIfNeeded(goal: goal)
+                            } catch {
+                                print("Warning: Failed to sync status for goal \(goal.id): \(error)")
+                                return goal
+                            }
+                        }
+                    }
+                    
+                    for await syncedGoal in group {
+                        syncedMap[syncedGoal.id] = syncedGoal
+                    }
+                    
+                    return goalsWithCollaborators.map { syncedMap[$0.id] ?? $0 }
+                }
+            }()
+            
+            async let likesDataTask = supabaseService.getLikesForGoals(goalIds: goalIds)
+            async let commentCountsTask = supabaseService.getCommentCountsForGoals(goalIds: goalIds)
+            async let taggedUsersTask = supabaseService.getTaggedUsersForGoals(goalIds: goalIds)
+            
+            // Wait for parallel operations
+            let syncedGoals = try await syncedGoalsTask
+            let likesData = try await likesDataTask
+            let commentCounts = try await commentCountsTask
+            let taggedUsersMap = try await taggedUsersTask
             
             await MainActor.run {
                 self.goals = syncedGoals
+                self.taggedUsersByGoalId = taggedUsersMap
                 self.friendsCount = friendsCount
+                self.likesByGoalId = likesData
+                self.commentCountsByGoalId = commentCounts
+                self.isLoading = false
+            }
+        } catch is CancellationError {
+            // SwiftUI frequently cancels in-flight tasks during refresh/navigation.
+            // Treat as a non-error and keep existing profile content.
+            await MainActor.run {
                 self.isLoading = false
             }
         } catch {
+            // URLSession cancellations can also surface as URLError.cancelled
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                await MainActor.run {
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            // Only log/show actual errors, not cancellations
             await MainActor.run {
-                self.goals = []
-                self.friendsCount = 0
                 self.isLoading = false
             }
             print("Error loading profile data: \(error)")
+        }
+    }
+    
+    private func loadMoreProfileGoals() async {
+        guard !isLoadingMore && hasMoreGoals, let userId = authStore.userId else { return }
+        
+        await MainActor.run {
+            isLoadingMore = true
+        }
+        
+        do {
+            let offset = goals.count
+            let newGoals = try await supabaseService.fetchGoalsWithItems(filterOwnerId: userId, limit: pageSize, offset: offset)
+            
+            // Filter out drafts
+            let newPublishedGoals = newGoals.filter { !$0.isDraft }
+            
+            // Check if there are more goals
+            let hasMore = newPublishedGoals.count == pageSize
+            
+            if newPublishedGoals.isEmpty {
+                await MainActor.run {
+                    hasMoreGoals = false
+                    isLoadingMore = false
+                }
+                return
+            }
+            
+            // Load additional data for new goals
+            let goalIds = newPublishedGoals.map { $0.id }
+            
+            async let likesDataTask = supabaseService.getLikesForGoals(goalIds: goalIds)
+            async let commentCountsTask = supabaseService.getCommentCountsForGoals(goalIds: goalIds)
+            async let taggedUsersTask = supabaseService.getTaggedUsersForGoals(goalIds: goalIds)
+            
+            let likesData = try await likesDataTask
+            let commentCounts = try await commentCountsTask
+            let taggedUsersMap = try await taggedUsersTask
+            
+            await MainActor.run {
+                self.goals.append(contentsOf: newPublishedGoals)
+                // Merge new likes data
+                for (id, data) in likesData {
+                    self.likesByGoalId[id] = data
+                }
+                // Merge new comment counts
+                for (id, count) in commentCounts {
+                    self.commentCountsByGoalId[id] = count
+                }
+                // Merge new tagged users
+                for (id, users) in taggedUsersMap {
+                    self.taggedUsersByGoalId[id] = users
+                }
+                self.hasMoreGoals = hasMore
+                self.isLoadingMore = false
+            }
+        } catch {
+            print("Error loading more profile goals: \(error)")
+            await MainActor.run {
+                isLoadingMore = false
+            }
         }
     }
     
@@ -394,7 +570,7 @@ struct ProfileView: View {
                     .eq("id", value: goal.id)
                     .execute()
                 
-                await MainActor.run {
+                _ = await MainActor.run {
                     Task {
                         await loadProfileData()
                     }
@@ -404,10 +580,158 @@ struct ProfileView: View {
             }
         }
     }
+    
+    
+    
+    private func loadDrafts() async {
+        guard let userId = authStore.userId else { return }
+        
+        // Don't show loading if we already have drafts cached (optimistic update)
+        let hasCachedDrafts = await MainActor.run {
+            return !draftGoals.isEmpty
+        }
+        
+        if !hasCachedDrafts {
+            await MainActor.run {
+                isLoadingDrafts = true
+            }
+        }
+        
+        do {
+            print("📝 ProfileView: Starting to load drafts for user \(userId)")
+            let drafts = try await supabaseService.fetchDraftGoals(forUserId: userId)
+            print("📝 ProfileView: Successfully fetched \(drafts.count) drafts")
+            
+            await MainActor.run {
+                // Merge with existing drafts (preserve optimistically added drafts)
+                var mergedDrafts = drafts
+                
+                // Add any drafts that are in draftGoals but not in the fetched list
+                // This preserves drafts that were just created but might not be in the DB yet
+                // IMPORTANT: Only preserve cached drafts that are still drafts (isDraft == true)
+                for existingDraft in self.draftGoals {
+                    // Only add if it's still a draft and not already in the merged list
+                    if existingDraft.isDraft && !mergedDrafts.contains(where: { $0.id == existingDraft.id }) {
+                        mergedDrafts.insert(existingDraft, at: 0)
+                    }
+                }
+                
+                // Remove duplicates and sort by created_at (newest first)
+                // Filter to only include actual drafts (isDraft == true)
+                var uniqueDrafts: [Goal] = []
+                var seenIds: Set<UUID> = []
+                for draft in mergedDrafts.sorted(by: { $0.createdAt > $1.createdAt }) {
+                    // Only include if it's a draft and we haven't seen it before
+                    if draft.isDraft && !seenIds.contains(draft.id) {
+                        uniqueDrafts.append(draft)
+                        seenIds.insert(draft.id)
+                    }
+                }
+                
+                self.draftGoals = uniqueDrafts
+                self.isLoadingDrafts = false
+            }
+        } catch is CancellationError {
+            // SwiftUI frequently cancels in-flight tasks during refresh/navigation.
+            // Treat as a non-error and keep existing draft content.
+            await MainActor.run {
+                self.isLoadingDrafts = false
+            }
+        } catch {
+            // URLSession cancellations can also surface as URLError.cancelled
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                await MainActor.run {
+                    self.isLoadingDrafts = false
+                }
+                return
+            }
+            
+            // Only log/show actual errors, not cancellations
+            print("❌ Error loading drafts: \(error)")
+            print("   Error type: \(type(of: error))")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let context):
+                    print("   Missing key: \(key.stringValue)")
+                    print("   Context: \(context.debugDescription)")
+                    print("   Coding path: \(context.codingPath)")
+                case .typeMismatch(let type, let context):
+                    print("   Type mismatch: \(type)")
+                    print("   Context: \(context.debugDescription)")
+                case .valueNotFound(let type, let context):
+                    print("   Value not found: \(type)")
+                    print("   Context: \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("   Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("   Unknown decoding error")
+                }
+            }
+            await MainActor.run {
+                // Don't clear existing drafts on error - preserve cached drafts
+                // Only clear if we have no cached drafts
+                if self.draftGoals.isEmpty {
+                    self.draftGoals = []
+                }
+                self.isLoadingDrafts = false
+            }
+        }
+    }
+    
+    private func publishDraft(_ goal: Goal) async {
+        do {
+                    try await supabaseService.publishDraft(goalId: goal.id)
+            await loadDrafts()
+            await loadProfileData()
+        } catch {
+            print("Error publishing draft: \(error)")
+        }
+    }
+    
+    private func handleLikeToggle(goalId: UUID, currentIsLiked: Bool) {
+        Task {
+            do {
+                if currentIsLiked {
+                    try await supabaseService.unlikeGoal(goalId: goalId)
+                } else {
+                    try await supabaseService.likeGoal(goalId: goalId)
+                }
+                
+                // Update local state optimistically
+                await MainActor.run {
+                    if var currentLikes = likesByGoalId[goalId] {
+                        currentLikes.isLiked.toggle()
+                        currentLikes.count += currentIsLiked ? -1 : 1
+                        likesByGoalId[goalId] = currentLikes
+                    } else {
+                        likesByGoalId[goalId] = (count: currentIsLiked ? 0 : 1, isLiked: !currentIsLiked)
+                    }
+                }
+                
+                // Refresh likes data from server to ensure accuracy
+                let updatedLikes = try await supabaseService.getLikesForGoals(goalIds: [goalId])
+                await MainActor.run {
+                    if let updated = updatedLikes[goalId] {
+                        likesByGoalId[goalId] = updated
+                    }
+                }
+            } catch {
+                print("Error toggling like: \(error)")
+                // Revert optimistic update on error
+                await MainActor.run {
+                    if var currentLikes = likesByGoalId[goalId] {
+                        currentLikes.isLiked = currentIsLiked
+                        currentLikes.count += currentIsLiked ? 1 : -1
+                        likesByGoalId[goalId] = currentLikes
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Stat Card Component
-struct StatCard: View {
+private struct StatCard: View {
     let value: String
     let label: String
     
@@ -430,7 +754,7 @@ struct StatCard: View {
 }
 
 // Category Chip Component
-struct CategoryChip: View {
+private struct CategoryChip: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
@@ -440,12 +764,15 @@ struct CategoryChip: View {
             Text(title)
                 .font(.system(size: 14, weight: isSelected ? .bold : .semibold))
                 .foregroundColor(isSelected ? .blue : .secondary)
-                .padding(.horizontal, 20)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
                 .cornerRadius(20)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(title)
+        .accessibilityLabel(title)
     }
 }
 

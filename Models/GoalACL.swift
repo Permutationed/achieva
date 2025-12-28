@@ -1,6 +1,6 @@
 //
 //  GoalACL.swift
-//  Bucketlist
+//  Achieva
 //
 //  Goal ACL model matching backend schema
 //
