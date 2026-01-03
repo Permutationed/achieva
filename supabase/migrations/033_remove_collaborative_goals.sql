@@ -136,3 +136,9 @@ DROP POLICY IF EXISTS "Invited users can update their collaboration requests" ON
 DROP POLICY IF EXISTS "Users can delete collaboration requests" ON goal_collaborators;
 
 
+
+
+
+
+
+

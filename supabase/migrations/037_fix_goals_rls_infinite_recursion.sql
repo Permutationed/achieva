@@ -128,3 +128,9 @@ CREATE POLICY "Users can view goals where they are tagged"
     );
 
 
+
+
+
+
+
+

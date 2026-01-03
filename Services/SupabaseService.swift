@@ -193,6 +193,11 @@ class SupabaseService: ObservableObject {
         }
     }
     
+    /// Clears the cached user ID - call this when signing out or switching accounts
+    func clearUserCache() {
+        cachedUserId = nil
+    }
+    
     func isPolicyRecursionError(_ error: Error) -> Bool {
         let s = String(describing: error).lowercased()
         return s.contains("infinite recursion") && s.contains("policy") && s.contains("goals")
@@ -273,7 +278,8 @@ class SupabaseService: ObservableObject {
     /// - Returns: The public URL of the uploaded image
     func uploadProfileImage(userId: UUID, imageData: Data) async throws -> String {
         let fileName = "avatar.jpg"
-        let filePath = "\(userId.uuidString)/\(fileName)"
+        // IMPORTANT: Use lowercased UUID to match PostgreSQL's auth.uid()::text format
+        let filePath = "\(userId.uuidString.lowercased())/\(fileName)"
         
         print("📤 Uploading profile image to: profile-pictures/\(filePath)")
         
@@ -427,7 +433,7 @@ class SupabaseService: ObservableObject {
         // Build OR query: username.ilike.%query% OR first_name.ilike.%query% OR last_name.ilike.%query%
         let profiles: [Profile] = try await client
             .from("profiles")
-            .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+            .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
             .neq("id", value: currentUserId) // Exclude current user
             .or("username.ilike.\(searchPattern),first_name.ilike.\(searchPattern),last_name.ilike.\(searchPattern)")
             .limit(limit)
@@ -486,7 +492,7 @@ class SupabaseService: ObservableObject {
         let values: [any PostgrestFilterValue] = uncachedIds.map { $0.uuidString }
         let fetchedProfiles: [Profile] = try await client
             .from("profiles")
-            .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+            .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
             .in("id", values: values)
             .execute()
             .value
@@ -1633,6 +1639,130 @@ class SupabaseService: ObservableObject {
             .value
         
         print("✅ Goal unarchived successfully (status: \(newStatus))")
+    }
+    
+    // MARK: - Notifications
+    
+    /// Fetches notifications for the current user
+    /// - Parameters:
+    ///   - userId: The user ID to fetch notifications for
+    ///   - limit: Maximum number of notifications to fetch (default: 50)
+    ///   - offset: Number of notifications to skip for pagination (default: 0)
+    /// - Returns: Array of notifications ordered by created_at DESC
+    func getNotifications(userId: UUID, limit: Int = 50, offset: Int = 0) async throws -> [AppNotification] {
+        if useMocks {
+            print("🧪 [Mock] Getting notifications for user \(userId)")
+            return []
+        }
+        
+        print("📬 Fetching notifications for user \(userId)")
+        
+        let notifications: [AppNotification] = try await client
+            .from("notifications")
+            .select()
+            .eq("user_id", value: userId)
+            .order("created_at", ascending: false)
+            .range(from: offset, to: offset + limit - 1)
+            .execute()
+            .value
+        
+        print("✅ Fetched \(notifications.count) notifications")
+        return notifications
+    }
+    
+    /// Marks a notification as read
+    /// - Parameter notificationId: The UUID of the notification to mark as read
+    func markNotificationAsRead(notificationId: UUID) async throws {
+        if useMocks {
+            print("🧪 [Mock] Marking notification \(notificationId) as read")
+            return
+        }
+        
+        print("✅ Marking notification \(notificationId) as read")
+        
+        struct NotificationUpdate: Encodable {
+            let read_at: String
+        }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        let update = NotificationUpdate(read_at: dateFormatter.string(from: Date()))
+        
+        try await client
+            .from("notifications")
+            .update(update)
+            .eq("id", value: notificationId)
+            .execute()
+        
+        print("✅ Notification marked as read")
+    }
+    
+    /// Marks all notifications as read for a user
+    /// - Parameter userId: The UUID of the user
+    func markAllNotificationsAsRead(userId: UUID) async throws {
+        if useMocks {
+            print("🧪 [Mock] Marking all notifications as read for user \(userId)")
+            return
+        }
+        
+        print("✅ Marking all notifications as read for user \(userId)")
+        
+        struct NotificationUpdate: Encodable {
+            let read_at: String
+        }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        let update = NotificationUpdate(read_at: dateFormatter.string(from: Date()))
+        
+        try await client
+            .from("notifications")
+            .update(update)
+            .eq("user_id", value: userId)
+            .is("read_at", value: nil)
+            .execute()
+        
+        print("✅ All notifications marked as read")
+    }
+    
+    /// Gets the count of unread notifications for a user
+    /// - Parameter userId: The UUID of the user
+    /// - Returns: The count of unread notifications
+    func getUnreadNotificationCount(userId: UUID) async throws -> Int {
+        if useMocks {
+            print("🧪 [Mock] Getting unread notification count for user \(userId)")
+            return 0
+        }
+        
+        struct NotificationId: Codable {
+            let id: UUID
+        }
+        
+        // Count unread notifications
+        let notifications: [NotificationId] = try await client
+            .from("notifications")
+            .select("id")
+            .eq("user_id", value: userId)
+            .is("read_at", value: nil)
+            .execute()
+            .value
+        
+        // Count pending friend requests (incoming)
+        struct FriendshipId: Codable {
+            let id: UUID
+        }
+        
+        let friendRequests: [FriendshipId] = try await client
+            .from("friendships")
+            .select("id")
+            .eq("user_id_2", value: userId)
+            .eq("status", value: "pending")
+            .execute()
+            .value
+        
+        return notifications.count + friendRequests.count
     }
 }
 

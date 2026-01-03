@@ -60,7 +60,7 @@ struct NewConversationView: View {
                                 }
                             } label: {
                                 HStack(spacing: 12) {
-                                    AvatarView(name: friend.fullName, size: 48)
+                                    AvatarView(name: friend.fullName, size: 48, avatarUrl: friend.avatarUrl)
                                     
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(friend.fullName)
@@ -136,5 +136,11 @@ struct NewConversationView: View {
         }
     }
 }
+
+
+
+
+
+
 
 

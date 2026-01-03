@@ -99,6 +99,9 @@ class AuthStore: ObservableObject {
         
         // Listen for auth state changes
         for await (event, session) in supabaseService.client.auth.authStateChanges {
+            // Clear cached user ID on any auth state change to ensure fresh data
+            supabaseService.clearUserCache()
+            
             switch event {
             case .initialSession:
                 await updateSession(session)
@@ -136,10 +139,46 @@ class AuthStore: ObservableObject {
         if let userId = userId {
             await loadProfile(userId: userId)
             
-            // If profile exists after loading, user is not new (clear the flag)
-            if self.profile != nil {
+            // If profile doesn't exist, wait a bit and retry (for OAuth users, trigger might be delayed)
+            if self.profile == nil {
+                // Wait 500ms for database trigger to create profile
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await loadProfile(userId: userId)
+            }
+            
+            // If profile still doesn't exist, create it manually (fallback if trigger fails)
+            if self.profile == nil {
+                print("⚠️ Profile not found for user \(userId), creating default profile...")
+                await createDefaultProfile(userId: userId)
+                await loadProfile(userId: userId)
+            }
+            
+            // Check if this is a new user (profile has default values)
+            if let profile = self.profile {
+                // Determine if user needs onboarding:
+                // - Default first name is "User"
+                // - Default date of birth is 2000-01-01
+                // - Last name is empty
+                let hasDefaultValues = profile.firstName == "User" && 
+                                     profile.lastName.isEmpty &&
+                                     Calendar.current.dateComponents([.year], from: profile.dateOfBirth).year == 2000
+                
+                if hasDefaultValues {
+                    // This is a new user who needs to complete onboarding
+                    await MainActor.run {
+                        self.isNewSignUp = true
+                    }
+                } else {
+                    // Existing user with completed profile
+                    await MainActor.run {
+                        self.isNewSignUp = false
+                    }
+                }
+            } else {
+                // Profile still doesn't exist after all attempts - treat as new signup
+                print("⚠️ Warning: Could not create profile for user \(userId), treating as new signup")
                 await MainActor.run {
-                    self.isNewSignUp = false
+                    self.isNewSignUp = true
                 }
             }
         } else {
@@ -149,11 +188,58 @@ class AuthStore: ObservableObject {
     
     // MARK: - Profile Management
     
+    /// Creates a default profile for a user (fallback if database trigger fails)
+    private func createDefaultProfile(userId: UUID) async {
+        do {
+            // Generate a unique username based on user ID
+            let usernameBase = userId.uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(8)
+            var username = String(usernameBase)
+            var counter = 0
+            
+            // Ensure username is unique
+            while true {
+                let existing: [Profile] = try await supabaseService.client
+                    .from("profiles")
+                    .select("id")
+                    .eq("username", value: username)
+                    .execute()
+                    .value
+                
+                if existing.isEmpty {
+                    break
+                }
+                counter += 1
+                username = String(usernameBase) + String(counter)
+            }
+            
+            // Create profile with default values
+            let newProfile = Profile(
+                id: userId,
+                username: username,
+                firstName: "User",
+                lastName: "",
+                dateOfBirth: Date(timeIntervalSince1970: 946684800), // 2000-01-01
+                createdAt: Date(),
+                updatedAt: Date(),
+                avatarUrl: nil
+            )
+            
+            try await supabaseService.client
+                .from("profiles")
+                .insert(newProfile)
+                .execute()
+            
+            print("✅ Created default profile for user \(userId) with username \(username)")
+        } catch {
+            print("❌ Failed to create default profile: \(error.localizedDescription)")
+        }
+    }
+    
     func loadProfile(userId: UUID) async {
         do {
             let response: [Profile] = try await supabaseService.client
                 .from("profiles")
-                .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+                .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
                 .eq("id", value: userId)
                 .execute()
                 .value
@@ -195,44 +281,56 @@ class AuthStore: ObservableObject {
             print("Warning: Could not check username availability: \(error.localizedDescription)")
         }
         
-        // Create update payload
-        struct UpdateProfilePayload: Encodable {
-            let username: String
-            let first_name: String
-            let last_name: String
-            let date_of_birth: String
-            let avatar_url: String?
-        }
-        
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withFullDate]
-        let dateOfBirthString = dateFormatter.string(from: dateOfBirth)
-        
-        let payload = UpdateProfilePayload(
-            username: username,
-            first_name: firstName,
-            last_name: lastName,
-            date_of_birth: dateOfBirthString,
-            avatar_url: avatarUrl
-        )
-        
-        // Try to insert, if conflict (already exists), update instead
+        // Use explicit update if profile already exists, otherwise insert
+        // This is more reliable for RLS than upsert in some cases
         do {
-            // For insert, we need the full profile structure
-            let profile = Profile(
-                id: userId,
-                username: username,
-                firstName: firstName,
-                lastName: lastName,
-                dateOfBirth: dateOfBirth,
-                createdAt: Date(),
-                updatedAt: Date(),
-                avatarUrl: avatarUrl
-            )
-            try await supabaseService.client
-                .from("profiles")
-                .insert(profile)
-                .execute()
+            if self.profile != nil {
+                // Update existing profile
+                struct ProfileUpdate: Encodable {
+                    let username: String
+                    let first_name: String
+                    let last_name: String
+                    let date_of_birth: String
+                    let avatar_url: String?
+                    let updated_at: Date
+                }
+                
+                let dateFormatter = ISO8601DateFormatter()
+                dateFormatter.formatOptions = [.withFullDate]
+                let dobString = dateFormatter.string(from: dateOfBirth)
+                
+                let update = ProfileUpdate(
+                    username: username,
+                    first_name: firstName,
+                    last_name: lastName,
+                    date_of_birth: dobString,
+                    avatar_url: avatarUrl,
+                    updated_at: Date()
+                )
+                
+                try await supabaseService.client
+                    .from("profiles")
+                    .update(update)
+                    .eq("id", value: userId)
+                    .execute()
+            } else {
+                // Insert new profile
+                let newProfile = Profile(
+                    id: userId,
+                    username: username,
+                    firstName: firstName,
+                    lastName: lastName,
+                    dateOfBirth: dateOfBirth,
+                    createdAt: Date(),
+                    updatedAt: Date(),
+                    avatarUrl: avatarUrl
+                )
+                
+                try await supabaseService.client
+                    .from("profiles")
+                    .insert(newProfile)
+                    .execute()
+            }
         } catch {
             // Check if error is due to username uniqueness constraint
             if let postgrestError = error as? PostgrestError,
@@ -241,23 +339,9 @@ class AuthStore: ObservableObject {
                 throw AuthError.usernameTaken
             }
             
-            // If profile exists (different error), try to update it
-            do {
-                try await supabaseService.client
-                    .from("profiles")
-                    .update(payload)
-                    .eq("id", value: userId)
-                    .execute()
-            } catch let updateError {
-                // Check if update error is also a username uniqueness constraint
-                if let postgrestError = updateError as? PostgrestError,
-                   let errorCode = postgrestError.code,
-                   errorCode == "23505" {
-                    throw AuthError.usernameTaken
-                }
-                // Re-throw the update error
-                throw updateError
-            }
+            // Re-throw other errors
+            print("❌ Upsert failed: \(error)")
+            throw error
         }
         
         await loadProfile(userId: userId)
@@ -328,10 +412,8 @@ class AuthStore: ObservableObject {
             // If you see localhost redirects, verify the URL is saved in Supabase dashboard
             let redirectURL = URL(string: "io.achieva.app://auth-callback")!
             
-            // OAuth sign in is treated as existing user sign in (not new signup)
-            await MainActor.run {
-                self.isNewSignUp = false
-            }
+            // Don't set isNewSignUp here - let updateSession determine it based on profile
+            // This allows us to detect new OAuth users who need onboarding
             
             _ = try await supabaseService.client.auth.signInWithOAuth(
                 provider: .apple,
@@ -339,6 +421,7 @@ class AuthStore: ObservableObject {
             )
             
             // Session will be updated automatically via auth state observer
+            // updateSession will check if profile has default values to determine if it's a new signup
         } catch {
             errorMessage = error.localizedDescription
             throw error
@@ -352,10 +435,8 @@ class AuthStore: ObservableObject {
         defer { isLoading = false }
         
         do {
-            // OAuth sign in is treated as existing user sign in (not new signup)
-            await MainActor.run {
-                self.isNewSignUp = false
-            }
+            // Don't set isNewSignUp here - let updateSession determine it based on profile
+            // This allows us to detect new OAuth users who need onboarding
             
             // Supabase Swift SDK handles OAuth flow internally
             // The session will be updated via auth state observer
@@ -365,6 +446,45 @@ class AuthStore: ObservableObject {
             )
             
             // Session will be updated automatically via auth state observer
+            // updateSession will check if profile has default values to determine if it's a new signup
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+    
+    // MARK: - Password Reset
+    
+    func resetPassword(email: String) async throws {
+        isLoading = true
+        errorMessage = nil
+        
+        defer { isLoading = false }
+        
+        do {
+            // Supabase will send a password reset email
+            // The redirectTo URL is where users will be sent after clicking the reset link
+            try await supabaseService.client.auth.resetPasswordForEmail(
+                email,
+                redirectTo: URL(string: "io.achieva.app://auth-callback?type=recovery")!
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+    
+    /// Updates the user's password (used after clicking reset link)
+    func updatePassword(newPassword: String) async throws {
+        isLoading = true
+        errorMessage = nil
+        
+        defer { isLoading = false }
+        
+        do {
+            var attributes = Auth.UserAttributes()
+            attributes.password = newPassword
+            try await supabaseService.client.auth.update(user: attributes)
         } catch {
             errorMessage = error.localizedDescription
             throw error
@@ -380,6 +500,8 @@ class AuthStore: ObservableObject {
         defer { isLoading = false }
         
         do {
+            // Clear cached user ID before signing out
+            supabaseService.clearUserCache()
             try await supabaseService.client.auth.signOut()
             await updateSession(nil)
         } catch {

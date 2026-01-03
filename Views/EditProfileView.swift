@@ -89,6 +89,54 @@ struct EditProfileView: View {
                             .padding(.top, 8)
                         }
 
+                        // Profile Picture Section
+                        VStack(spacing: 16) {
+                            ZStack(alignment: .bottomTrailing) {
+                                if let selectedImage = selectedProfileImage {
+                                    Image(uiImage: selectedImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 100, height: 100)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color(.systemGray5), lineWidth: 2))
+                                } else {
+                                    AvatarView(
+                                        name: authStore.profile?.fullName ?? "User",
+                                        size: 100,
+                                        avatarUrl: authStore.profile?.avatarUrl
+                                    )
+                                    .overlay(Circle().stroke(Color(.systemGray5), lineWidth: 2))
+                                }
+                                
+                                Button {
+                                    showingImagePicker = true
+                                } label: {
+                                    Image(systemName: "camera.fill")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 32, height: 32)
+                                        .background(Color.blue)
+                                        .clipShape(Circle())
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color(.systemBackground), lineWidth: 3)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .offset(x: 2, y: 2)
+                            }
+                            
+                            Button {
+                                showingImagePicker = true
+                            } label: {
+                                Text("Change Photo")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.blue)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 24)
+
                         // Profile Information Card (same inputs)
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Profile Information")

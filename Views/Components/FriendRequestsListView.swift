@@ -123,7 +123,7 @@ struct FriendRequestRow: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 16) {
-                AvatarView(name: userWithStatus.profile.fullName, size: 56)
+                AvatarView(name: userWithStatus.profile.fullName, size: 56, avatarUrl: userWithStatus.profile.avatarUrl)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(userWithStatus.profile.fullName)

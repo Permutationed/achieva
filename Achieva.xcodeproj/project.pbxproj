@@ -13,6 +13,7 @@
 		02803091C8AC96C455FA18F6 /* AchievaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88658E5E79D46B625E71C76 /* AchievaApp.swift */; };
 		056A6118DA444D2F04E8160A /* CollaborationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD30C274DF443E99555311C0 /* CollaborationUITests.swift */; };
 		0A212D26B51F11D4881B55D6 /* 037_fix_goals_rls_infinite_recursion.sql in Resources */ = {isa = PBXBuildFile; fileRef = A89006785ABE39B5A5F7F12A /* 037_fix_goals_rls_infinite_recursion.sql */; };
+		0A425E392F011F7C00493BB3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A425E382F011F7C00493BB3 /* Assets.xcassets */; };
 		0EF7915AC3F188B4C3E67917 /* 022_add_private_visibility.sql in Resources */ = {isa = PBXBuildFile; fileRef = 9786C251FC41FB1864C621CA /* 022_add_private_visibility.sql */; };
 		148AED37B1823417818ABFDF /* 008_fix_storage_rls_for_public_bucket.sql in Resources */ = {isa = PBXBuildFile; fileRef = 1A98EBB5A1BD5D7E00DFF8D3 /* 008_fix_storage_rls_for_public_bucket.sql */; };
 		19D3C8402799B3536BB9B382 /* 028_fix_conversations_insert_policy_final.sql in Resources */ = {isa = PBXBuildFile; fileRef = F7596A9A3220AF3A1F24505E /* 028_fix_conversations_insert_policy_final.sql */; };
@@ -118,6 +119,7 @@
 /* Begin PBXFileReference section */
 		0240E499140F68151A6F10B3 /* 026_fix_conversation_participants_rls.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = 026_fix_conversation_participants_rls.sql; sourceTree = "<group>"; };
 		06FE78112BD4E569E577B9ED /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
+		0A425E382F011F7C00493BB3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B0AE7F6799A5634C567ED3F /* GoalDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalDetailView.swift; sourceTree = "<group>"; };
 		0B6ABC486EAC0A0BF8426A40 /* 036_cleanup_legacy_messages.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = 036_cleanup_legacy_messages.sql; sourceTree = "<group>"; };
 		0D5A3004682256CFD4828749 /* AuthKey_CWJ7DDABZ2.p8 */ = {isa = PBXFileReference; lastKnownFileType = text; path = AuthKey_CWJ7DDABZ2.p8; sourceTree = "<group>"; };
@@ -325,6 +327,7 @@
 		7C2A0840D137D2EF9359966B = {
 			isa = PBXGroup;
 			children = (
+				0A425E382F011F7C00493BB3 /* Assets.xcassets */,
 				4021BAB507D57D067B202327 /* AchievaUITests */,
 				A665AB936546E0D378C21860 /* Models */,
 				9B75B1E960C9938671DD8BDC /* mvp1 */,
@@ -557,6 +560,7 @@
 				98A982338DCEA2F91EE9B3E3 /* FIX_GOALS_RLS_INFINITE_RECURSION.sql in Resources */,
 				879E888AD8F1924631BCCF3E /* generate-apple-secret.js in Resources */,
 				86694615391A5CFB68BDE275 /* package-lock.json in Resources */,
+				0A425E392F011F7C00493BB3 /* Assets.xcassets in Resources */,
 				72DE6676FAC37E1237E2DF59 /* package.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

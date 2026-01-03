@@ -116,7 +116,7 @@ struct CollaboratorRow: View {
     var body: some View {
         Button(action: onToggle) {
             HStack(spacing: 12) {
-                AvatarView(name: friend.profile.fullName, size: 48)
+                AvatarView(name: friend.profile.fullName, size: 48, avatarUrl: friend.profile.avatarUrl)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(friend.profile.fullName)

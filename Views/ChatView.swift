@@ -54,6 +54,7 @@ struct ChatView: View {
                                 message: message,
                                 isFromCurrentUser: message.userId == currentUserId,
                                 senderName: message.senderProfile?.fullName,
+                                senderAvatarUrl: message.senderProfile?.avatarUrl,
                                 currentUserId: currentUserId
                             )
                             .id(message.id)

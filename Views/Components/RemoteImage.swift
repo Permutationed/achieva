@@ -39,6 +39,7 @@ struct RemoteImage: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
+                    .clipped() // Ensure image doesn't bleed out of its intended bounds
             } else {
                 placeholder
                     .onAppear {

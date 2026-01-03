@@ -12,11 +12,11 @@ struct AchievaApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     init() {
-        // Initialize Supabase service
+        // Initialize services (non-blocking)
+        // These are lazy singletons, so accessing them here just ensures they exist
+        // Actual initialization happens on first use
         _ = SupabaseService.shared
-        // Initialize AuthStore
         _ = AuthStore.shared
-        // Initialize NotificationService
         _ = NotificationService.shared
     }
     
@@ -24,14 +24,23 @@ struct AchievaApp: App {
         WindowGroup {
             AuthGateView()
                 .onOpenURL { url in
-                    // Handle OAuth callback
+                    // Handle OAuth callback and password reset recovery
                     Task {
                         do {
-                            try await SupabaseService.shared.client.auth.session(from: url)
-                            // Reload auth state after OAuth callback
-                            await AuthStore.shared.observeAuthState()
+                            // Check if this is a password reset recovery link
+                            if url.absoluteString.contains("type=recovery") {
+                                // Handle password reset recovery
+                                try await SupabaseService.shared.client.auth.session(from: url)
+                                // User will need to set a new password - this is handled by the session
+                                await AuthStore.shared.observeAuthState()
+                            } else {
+                                // Regular OAuth callback
+                                try await SupabaseService.shared.client.auth.session(from: url)
+                                // Reload auth state after OAuth callback
+                                await AuthStore.shared.observeAuthState()
+                            }
                         } catch {
-                            print("Error handling OAuth callback: \(error.localizedDescription)")
+                            print("Error handling URL callback: \(error.localizedDescription)")
                         }
                     }
                 }
@@ -49,11 +58,14 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Setup notification handling
         NotificationService.shared.setupNotificationHandling()
         
-        // Request notification authorization after a short delay
+        // Request notification authorization after a short delay (non-blocking)
+        // Only request on real devices, not simulator
+        #if !targetEnvironment(simulator)
         Task {
             try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
             await NotificationService.shared.requestAuthorization()
         }
+        #endif
         
         return true
     }
@@ -69,12 +81,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        // Only log error if not on simulator (simulator always fails, which is expected)
-        #if !targetEnvironment(simulator)
-        print("❌ Failed to register for remote notifications: \(error)")
-        #else
         // Silently ignore on simulator - push notifications don't work there
         // This error is expected: "no valid aps-environment entitlement string found"
+        #if targetEnvironment(simulator)
+        // Do nothing on simulator - this is expected
+        #else
+        // Only log error on real device
+        print("❌ Failed to register for remote notifications: \(error)")
         #endif
     }
 }

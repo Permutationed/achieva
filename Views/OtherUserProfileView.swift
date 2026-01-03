@@ -20,6 +20,10 @@ struct OtherUserProfileView: View {
     @State private var friendsCount: Int = 0
     @State private var selectedCategory: String = "All Goals"
     @State private var taggedUsersByGoalId: [UUID: Set<UUID>] = [:]
+    @State private var friendshipStatus: FriendshipStatus?
+    @State private var friendshipId: UUID?
+    @State private var isProcessingFriendship = false
+    @State private var errorMessage: String?
     
     var filteredGoals: [Goal] {
         switch selectedCategory {
@@ -47,7 +51,8 @@ struct OtherUserProfileView: View {
                             VStack(spacing: 16) {
                                 AvatarView(
                                     name: profile.fullName,
-                                    size: 96
+                                    size: 96,
+                                    avatarUrl: profile.avatarUrl
                                 )
                                 .overlay(
                                     Circle()
@@ -69,8 +74,54 @@ struct OtherUserProfileView: View {
                                     StatCard(value: "\(filteredGoals.count)", label: "Goals")
                                     StatCard(value: "\(friendsCount)", label: "Friends")
                                 }
+                                
+                                // Friend Action Button (only show if not viewing own profile)
+                                if authStore.userId != userId {
+                                    if friendshipStatus == .accepted {
+                                    Button {
+                                        Task { await removeFriend() }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "person.badge.minus")
+                                            Text("Remove Friend")
+                                        }
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.red)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(Color.red.opacity(0.1))
+                                        .cornerRadius(12)
+                                    }
+                                    .disabled(isProcessingFriendship)
+                                } else if friendshipStatus == .pending {
+                                    Text("Friend Request Pending")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(Color(.systemGray6))
+                                        .cornerRadius(12)
+                                } else {
+                                    Button {
+                                        Task { await sendFriendRequest() }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "person.badge.plus")
+                                            Text("Add Friend")
+                                        }
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(Color.blue)
+                                        .cornerRadius(12)
+                                    }
+                                    .disabled(isProcessingFriendship)
+                                }
+                            }
                             }
                             .padding(.top, 20)
+                            .padding(.horizontal, 18)
                             
                             // Category Filter
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -152,6 +203,7 @@ struct OtherUserProfileView: View {
         }
         .task {
             await loadProfile()
+            await loadFriendshipStatus()
         }
     }
     
@@ -164,7 +216,7 @@ struct OtherUserProfileView: View {
             // Load profile
             let profiles: [Profile] = try await supabaseService.client
                 .from("profiles")
-                .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+                .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
                 .eq("id", value: userId)
                 .limit(1)
                 .execute()
@@ -224,6 +276,92 @@ struct OtherUserProfileView: View {
             print("Error loading other user profile: \(error)")
             await MainActor.run {
                 isLoading = false
+            }
+        }
+    }
+    
+    private func loadFriendshipStatus() async {
+        guard let currentUserId = authStore.userId else { return }
+        
+        do {
+            let friendships: [Friendship] = try await supabaseService.client
+                .from("friendships")
+                .select()
+                .or("and(user_id_1.eq.\(currentUserId.uuidString),user_id_2.eq.\(userId.uuidString)),and(user_id_1.eq.\(userId.uuidString),user_id_2.eq.\(currentUserId.uuidString))")
+                .execute()
+                .value
+            
+            await MainActor.run {
+                if let friendship = friendships.first {
+                    self.friendshipStatus = friendship.status
+                    self.friendshipId = friendship.id
+                } else {
+                    self.friendshipStatus = nil
+                    self.friendshipId = nil
+                }
+            }
+        } catch {
+            print("Error loading friendship status: \(error)")
+        }
+    }
+    
+    private func sendFriendRequest() async {
+        guard let currentUserId = authStore.userId else { return }
+        
+        await MainActor.run { isProcessingFriendship = true }
+        
+        do {
+            struct FriendRequest: Encodable {
+                let user_id_1: String
+                let user_id_2: String
+                let status: String
+            }
+            
+            let request = FriendRequest(
+                user_id_1: currentUserId.uuidString,
+                user_id_2: userId.uuidString,
+                status: "pending"
+            )
+            
+            try await supabaseService.client
+                .from("friendships")
+                .insert(request)
+                .execute()
+            
+            await loadFriendshipStatus()
+            
+            await MainActor.run {
+                isProcessingFriendship = false
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to send friend request"
+                isProcessingFriendship = false
+            }
+        }
+    }
+    
+    private func removeFriend() async {
+        guard let friendshipId = friendshipId else { return }
+        
+        await MainActor.run { isProcessingFriendship = true }
+        
+        do {
+            try await supabaseService.client
+                .from("friendships")
+                .delete()
+                .eq("id", value: friendshipId)
+                .execute()
+            
+            await loadFriendshipStatus()
+            
+            await MainActor.run {
+                isProcessingFriendship = false
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to remove friend"
+                isProcessingFriendship = false
             }
         }
     }

@@ -111,7 +111,7 @@ struct FeedGoalCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header with owner
             HStack(spacing: 12) {
-                AvatarView(name: ownerProfile?.fullName ?? ownerDisplayName ?? "Unknown", size: 40)
+                AvatarView(name: ownerProfile?.fullName ?? ownerDisplayName ?? "Unknown", size: 40, avatarUrl: ownerProfile?.avatarUrl)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(ownerProfile?.fullName ?? ownerDisplayName ?? "Unknown")
@@ -141,9 +141,11 @@ struct FeedGoalCardView: View {
                 if let coverImageUrl = goal.coverImageUrl, !coverImageUrl.isEmpty {
                     if let imageUrl = URL(string: coverImageUrl) {
                         RemoteImage(url: imageUrl, contentMode: .fill)
-                            .frame(maxWidth: .infinity)
                             .frame(height: 200)
+                            .frame(maxWidth: .infinity)
+                            .clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .allowsHitTesting(false) // Let the card or underlying buttons handle taps
                             .padding(.top, 4)
                             .padding(.bottom, 8)
                     } else {

@@ -21,8 +21,8 @@ class NotificationService: ObservableObject {
     private var notificationDelegate: NotificationDelegate?
     
     private init() {
-        // Check current authorization status
-        Task {
+        // Check current authorization status asynchronously (non-blocking)
+        Task { @MainActor in
             await checkAuthorizationStatus()
         }
     }
