@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var isLoading = false
     @State private var showingProfile = false
     @State private var showingNotifications = false
+    @State private var unreadNotificationCount = 0
 
     @State private var profilesById: [UUID: Profile] = [:]
     @State private var likesByGoalId: [UUID: (count: Int, isLiked: Bool)] = [:]
@@ -125,6 +126,8 @@ struct HomeView: View {
                     FeedHeaderView(
                         title: "Achieva",
                         currentUserDisplayName: authStore.profile?.fullName ?? authStore.profile?.username ?? "You",
+                        currentUserAvatarUrl: authStore.profile?.avatarUrl,
+                        unreadNotificationCount: unreadNotificationCount,
                         onNotificationsTap: {
                             showingNotifications = true
                         },
@@ -142,11 +145,21 @@ struct HomeView: View {
                     NotificationsView()
                 }
             }
+            .onChange(of: showingNotifications) { oldValue, newValue in
+                if oldValue && !newValue {
+                    // Sheet was dismissed, refresh the count
+                    Task {
+                        await loadUnreadNotifications()
+                    }
+                }
+            }
             .task {
                 await loadFeed()
+                await loadUnreadNotifications()
             }
             .refreshable {
                 await loadFeed()
+                await loadUnreadNotifications()
             }
             .onReceive(NotificationCenter.default.publisher(for: .goalPublishedNotification)) { _ in
                 Task {
@@ -170,6 +183,19 @@ struct HomeView: View {
                     await loadFeed()
                 }
             }
+        }
+    }
+    
+    private func loadUnreadNotifications() async {
+        guard let userId = authStore.userId else { return }
+        
+        do {
+            let count = try await supabaseService.getUnreadNotificationCount(userId: userId)
+            await MainActor.run {
+                unreadNotificationCount = count
+            }
+        } catch {
+            print("Error loading unread notification count: \(error)")
         }
     }
     
@@ -404,7 +430,7 @@ struct HomeView: View {
             let values: [any PostgrestFilterValue] = batch.map { $0.uuidString }
             let response: [Profile] = try await supabaseService.client
                 .from("profiles")
-                .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+                .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
                 .in("id", values: values)
                 .execute()
                 .value

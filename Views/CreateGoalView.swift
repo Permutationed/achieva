@@ -491,19 +491,26 @@ struct CreateGoalView: View {
                             .cornerRadius(24)
                             .padding(.horizontal, 16)
                             
-                            if visibility == .private {
+                            // Privacy description based on selected visibility
+                            if visibility == .public {
+                                Text("Public lists can be seen by anyone in the Discovery feed.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 4)
+                            } else if visibility == .friends {
+                                Text("Your friends can see your goal under the friends tab")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 4)
+                            } else if visibility == .private {
                                 Text("Only you can see this goal")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal, 16)
                                     .padding(.top, 4)
                             }
-                            
-                            
-                            Text("Public lists can be seen by anyone in the Discovery feed.")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 16)
                         }
                         .padding(.top, 8)
                         
@@ -757,6 +764,12 @@ struct CreateGoalView: View {
                         goalId: createdGoal.id,
                         userIds: Array(taggedUsers)
                     )
+                }
+                
+                // Haptic feedback for successful goal creation
+                await MainActor.run {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
                 }
                 
                 // Post notification if it's a draft or published

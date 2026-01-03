@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Achieva</string>
+	<string>AchievaApp</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -54,5 +54,11 @@
 	<string>Achieva needs access to your photo library to let you add images to your goals and share evidence of your achievements.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Achieva needs permission to save images to your photo library when you download goal images.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2025 Achieva. All rights reserved.</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.lifestyle</string>
 </dict>
 </plist>

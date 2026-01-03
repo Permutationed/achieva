@@ -67,24 +67,20 @@ struct ChatPinnedHeader: View {
         .onAppear {
             loadPinnedGoalsCount()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .goalPublishedNotification)) { _ in
+            // Refresh count when goals are published/tagged
+            loadPinnedGoalsCount()
+        }
     }
     
     private func loadPinnedGoalsCount() {
         Task {
             do {
-                // Count ALL goals tagged in this conversation (for any user)
-                let tags: [GoalTag] = try await SupabaseService.shared.client
-                    .from("goal_tags")
-                    .select("goal_id")
-                    .eq("conversation_id", value: conversationId)
-                    .execute()
-                    .value
-                
-                // Get unique goal IDs (a goal can be tagged to multiple users)
-                let uniqueGoalIds = Set(tags.map { $0.goalId })
+                // Use the existing method that properly counts distinct goals
+                let counts = try await SupabaseService.shared.getGoalCountsForConversations(conversationIds: [conversationId])
                 
                 await MainActor.run {
-                    self.pinnedGoalsCount = uniqueGoalIds.count
+                    self.pinnedGoalsCount = counts[conversationId] ?? 0
                     self.isLoading = false
                 }
             } catch {

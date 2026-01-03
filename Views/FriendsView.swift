@@ -86,9 +86,8 @@ struct FriendsView: View {
                     VStack(spacing: 0) {
                         HStack {
                             Text("Friends")
-                                .font(.system(size: 28, weight: .bold))
+                                .font(.system(size: 24, weight: .heavy, design: .rounded))
                                 .foregroundColor(.primary)
-                                .tracking(-0.015)
                             
                             Spacer()
                             
@@ -255,6 +254,50 @@ struct FriendsView: View {
                                     .padding(.top, 8)
                             }
                             
+                            // Friend Requests Section
+                            if !incomingRequests.isEmpty {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    HStack {
+                                        Text("Friend Requests")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        
+                                        Spacer()
+                                        
+                                        if incomingRequests.count > 1 {
+                                            Button {
+                                                showingFullRequestsList = true
+                                            } label: {
+                                                Text("See All")
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundColor(.blue)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 16)
+                                    .padding(.bottom, 12)
+                                    
+                                    // Show first request inline
+                                    if let firstRequest = incomingRequests.first {
+                                        FriendRequestRow(
+                                            userWithStatus: firstRequest,
+                                            isProcessing: processingRequestIds.contains(firstRequest.friendshipId ?? UUID()),
+                                            onConfirm: {
+                                                acceptRequest(firstRequest)
+                                            },
+                                            onDelete: {
+                                                rejectRequest(firstRequest)
+                                            }
+                                        )
+                                    }
+                                }
+                                .padding(.bottom, 8)
+                                
+                                Divider()
+                                    .background(Color(.separator).opacity(0.5))
+                            }
+                            
                             // Messages Section
                             VStack(alignment: .leading, spacing: 0) {
                                 HStack {
@@ -301,6 +344,12 @@ struct FriendsView: View {
                                             goalCount: goalCountsByConversationId[conversation.id],
                                             onTap: {
                                                 selectedConversation = conversation
+                                            },
+                                            onAvatarTap: {
+                                                if let otherUserId = conversation.otherParticipantProfile?.id {
+                                                    selectedFriendProfile = otherUserId
+                                                    showingFriendProfile = true
+                                                }
                                             }
                                         )
                                     }
@@ -314,6 +363,10 @@ struct FriendsView: View {
                                                 Task {
                                                     await createConversationWithFriend(friendId: friend.profile.id)
                                                 }
+                                            },
+                                            onAvatarTap: {
+                                                selectedFriendProfile = friend.profile.id
+                                                showingFriendProfile = true
                                             }
                                         )
                                     }
@@ -434,14 +487,27 @@ struct FriendsView: View {
         let friend: Profile
         let isLoading: Bool
         let onTap: () -> Void
+        let onAvatarTap: (() -> Void)?
+        
+        init(friend: Profile, isLoading: Bool, onTap: @escaping () -> Void, onAvatarTap: (() -> Void)? = nil) {
+            self.friend = friend
+            self.isLoading = isLoading
+            self.onTap = onTap
+            self.onAvatarTap = onAvatarTap
+        }
         
         var body: some View {
             Button {
                 onTap()
             } label: {
                 HStack(spacing: 16) {
-                    // Avatar
-                    AvatarView(name: friend.fullName, size: 56, avatarUrl: friend.avatarUrl)
+                    // Avatar - clickable to view profile
+                    Button {
+                        onAvatarTap?()
+                    } label: {
+                        AvatarView(name: friend.fullName, size: 56, avatarUrl: friend.avatarUrl)
+                    }
+                    .buttonStyle(.plain)
                     
                     VStack(alignment: .leading, spacing: 4) {
                         // Name
@@ -486,7 +552,7 @@ struct FriendsView: View {
         var body: some View {
             VStack(spacing: 12) {
                 HStack(spacing: 16) {
-                    AvatarView(name: userWithStatus.profile.fullName, size: 56)
+                    AvatarView(name: userWithStatus.profile.fullName, size: 56, avatarUrl: userWithStatus.profile.avatarUrl)
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text(userWithStatus.profile.fullName)
@@ -574,19 +640,40 @@ struct FriendsView: View {
     struct SuggestedUserView: View {
         let user: Profile
         let onAdd: () -> Void
+        @State private var isAdded = false
         
         var body: some View {
             VStack(spacing: 8) {
-                Button {
-                    onAdd()
-                } label: {
+                ZStack(alignment: .bottomTrailing) {
                     AvatarView(name: user.fullName, size: 64, avatarUrl: user.avatarUrl)
-                        .overlay(
+                    
+                    // Plus button / Checkmark overlay
+                    Button {
+                        if !isAdded {
+                            isAdded = true
+                            onAdd()
+                        }
+                    } label: {
+                        ZStack {
                             Circle()
-                                .stroke(Color.clear, lineWidth: 2)
-                        )
+                                .fill(isAdded ? Color.green : Color.blue)
+                                .frame(width: 24, height: 24)
+                            
+                            if isAdded {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white)
+                            } else {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 2, y: 2)
                 }
-                .buttonStyle(.plain)
                 
                 Text(user.fullName.components(separatedBy: " ").first ?? user.fullName)
                     .font(.system(size: 12, weight: .medium))
@@ -608,7 +695,7 @@ struct FriendsView: View {
         var body: some View {
             HStack(spacing: 16) {
                 ZStack(alignment: .bottomTrailing) {
-                    AvatarView(name: userWithStatus.profile.fullName, size: 48)
+                    AvatarView(name: userWithStatus.profile.fullName, size: 48, avatarUrl: userWithStatus.profile.avatarUrl)
                     
                     // Online indicator removed - not implemented yet
                 }
@@ -674,7 +761,7 @@ struct FriendsView: View {
         
         var body: some View {
             HStack(spacing: 16) {
-                AvatarView(name: userWithStatus.profile.fullName, size: 48)
+                AvatarView(name: userWithStatus.profile.fullName, size: 48, avatarUrl: userWithStatus.profile.avatarUrl)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(userWithStatus.profile.fullName)
@@ -739,7 +826,7 @@ struct FriendsView: View {
             // Load all profiles (excluding current user)
             let allProfiles: [Profile] = try await supabaseService.client
                 .from("profiles")
-                .select()
+                .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
                 .neq("id", value: userId)
                 .execute()
                 .value

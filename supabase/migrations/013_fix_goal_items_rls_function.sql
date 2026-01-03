@@ -78,3 +78,9 @@ GRANT EXECUTE ON FUNCTION get_visible_goal_items(UUID[]) TO anon;
 
 
 
+
+
+
+
+
+

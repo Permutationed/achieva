@@ -64,3 +64,9 @@ CREATE TRIGGER update_user_devices_updated_at
 
 
 
+
+
+
+
+
+

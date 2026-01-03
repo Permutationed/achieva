@@ -105,16 +105,14 @@ struct GoalDetailView: View {
 
     // MARK: - View
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) { // Align top Nav to the very top
             Color(.systemGroupedBackground).ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
-
-                    // Top nav row (minimal, quiet)
-                    topNavRow
-                        .padding(.horizontal, 18)
-                        .padding(.top, 10)
+                    
+                    // Added space for fixed topNavRow
+                    Spacer().frame(height: 60)
 
                     // Hero Image Section (if cover image exists)
                     if let coverImageUrl = goal.coverImageUrl, !coverImageUrl.isEmpty {
@@ -181,6 +179,12 @@ struct GoalDetailView: View {
                 }
                 .padding(.bottom, 96) // room for add composer
             }
+
+            // Fixed Top Nav Row (always on top)
+            topNavRow
+                .padding(.horizontal, 18)
+                .padding(.top, 10)
+                .zIndex(10) // Ensure it's above everything including images
 
             // Bottom add composer (primary action)
             bottomComposer
@@ -325,8 +329,9 @@ struct GoalDetailView: View {
             if let coverImageUrl = goal.coverImageUrl, !coverImageUrl.isEmpty, let imageUrl = URL(string: coverImageUrl) {
                 ZStack(alignment: .topTrailing) {
                     RemoteImage(url: imageUrl, contentMode: .fill)
-                        .frame(maxWidth: .infinity)
                         .frame(height: 240)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                     
                     // Status Badge
@@ -408,7 +413,7 @@ struct GoalDetailView: View {
                 HStack(spacing: 12) {
                     // Owner Avatar
                     if let profile = ownerProfile {
-                        AvatarView(name: profile.fullName, size: 48)
+                        AvatarView(name: profile.fullName, size: 48, avatarUrl: profile.avatarUrl)
                     } else {
                         Circle()
                             .fill(Color(.systemGray5))
@@ -1067,7 +1072,7 @@ struct GoalDetailView: View {
             // Load owner profile
             let profiles: [Profile] = try await supabaseService.client
                 .from("profiles")
-                .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+                .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
                 .eq("id", value: goal.ownerId)
                 .limit(1)
                 .execute()
@@ -1114,7 +1119,7 @@ struct GoalDetailView: View {
             if !taggedUserIds.isEmpty {
                 let profiles: [Profile] = try await supabaseService.client
                     .from("profiles")
-                    .select("id,username,first_name,last_name,date_of_birth,created_at,updated_at")
+                    .select("id,username,first_name,last_name,date_of_birth,avatar_url,created_at,updated_at")
                     .in("id", values: taggedUserIds.map { $0.uuidString })
                     .execute()
                     .value

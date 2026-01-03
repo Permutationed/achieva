@@ -50,7 +50,7 @@ struct FriendPickerView: View {
                     
                     ForEach(filteredFriends) { user in
                         HStack {
-                            AvatarView(name: user.profile.fullName, size: 40)
+                            AvatarView(name: user.profile.fullName, size: 40, avatarUrl: user.profile.avatarUrl)
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(user.profile.fullName)
@@ -119,6 +119,12 @@ struct FriendPickerView: View {
         isLoading: false
     )
 }
+
+
+
+
+
+
 
 
 

@@ -28,13 +28,16 @@ struct ShareHelper {
             shareText = "Check out \(name)'s goal: \(goal.title)!"
         }
         
-        // Create share items
-        var shareItems: [Any] = [shareText]
+        // Create share items with link first for better link preview ("superlink")
+        var shareItems: [Any] = []
         
-        // Add goal URL
+        // Add goal URL as first item to trigger rich preview (superlink)
         if let url = URL(string: generateGoalURL(goalId: goal.id)) {
             shareItems.append(url)
         }
+        
+        // Add share text as second item
+        shareItems.append(shareText)
         
         // Get the root view controller
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -74,8 +77,7 @@ struct ShareHelper {
     /// - Parameter goalId: The UUID of the goal
     /// - Returns: A URL string that can be shared
     static func generateGoalURL(goalId: UUID) -> String {
-        // Deep link format for future implementation
-        return "achieva://goal/\(goalId.uuidString)"
+        return "https://achieva.app/goal.html?id=\(goalId.uuidString.lowercased())"
     }
 }
 

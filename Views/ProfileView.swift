@@ -28,6 +28,7 @@ struct ProfileView: View {
     @State private var commentCountsByGoalId: [UUID: Int] = [:]
     @State private var taggedUsersByGoalId: [UUID: Set<UUID>] = [:]
     @State private var showingNotifications = false
+    @State private var unreadNotificationCount = 0
     
     // Pagination state
     @State private var isLoadingMore = false
@@ -275,6 +276,8 @@ struct ProfileView: View {
                         FeedHeaderView(
                             title: "Your Profile",
                             currentUserDisplayName: authStore.profile?.fullName ?? authStore.profile?.username ?? "You",
+                            currentUserAvatarUrl: authStore.profile?.avatarUrl,
+                            unreadNotificationCount: unreadNotificationCount,
                             onNotificationsTap: {
                                 showingNotifications = true
                             },
@@ -374,6 +377,32 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showingNotifications) {
             NotificationsView()
+        }
+        .onChange(of: showingNotifications) { oldValue, newValue in
+            if oldValue && !newValue {
+                // Sheet was dismissed, refresh the count
+                Task {
+                    await loadUnreadNotifications()
+                }
+            }
+        }
+        .task {
+            await loadProfileData()
+            await loadDrafts()
+            await loadUnreadNotifications()
+        }
+    }
+    
+    private func loadUnreadNotifications() async {
+        guard let userId = authStore.userId else { return }
+        
+        do {
+            let count = try await supabaseService.getUnreadNotificationCount(userId: userId)
+            await MainActor.run {
+                unreadNotificationCount = count
+            }
+        } catch {
+            print("Error loading unread notification count: \(error)")
         }
     }
     

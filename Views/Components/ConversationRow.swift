@@ -12,18 +12,32 @@ struct ConversationRow: View {
     let currentUserId: UUID
     let goalCount: Int?
     let onTap: () -> Void
+    let onAvatarTap: (() -> Void)?
+    
+    init(conversation: Conversation, currentUserId: UUID, goalCount: Int?, onTap: @escaping () -> Void, onAvatarTap: (() -> Void)? = nil) {
+        self.conversation = conversation
+        self.currentUserId = currentUserId
+        self.goalCount = goalCount
+        self.onTap = onTap
+        self.onAvatarTap = onAvatarTap
+    }
     
     var body: some View {
         Button {
             onTap()
         } label: {
             HStack(spacing: 16) {
-                // Avatar (14x14 in HTML = 56pt in SwiftUI)
-                if let otherProfile = conversation.otherParticipantProfile {
-                    AvatarView(name: otherProfile.fullName, size: 56, avatarUrl: otherProfile.avatarUrl)
-                } else {
-                    AvatarView(name: conversation.displayName(currentUserId: currentUserId), size: 56)
+                // Avatar (14x14 in HTML = 56pt in SwiftUI) - clickable to view profile
+                Button {
+                    onAvatarTap?()
+                } label: {
+                    if let otherProfile = conversation.otherParticipantProfile {
+                        AvatarView(name: otherProfile.fullName, size: 56, avatarUrl: otherProfile.avatarUrl)
+                    } else {
+                        AvatarView(name: conversation.displayName(currentUserId: currentUserId), size: 56, avatarUrl: nil)
+                    }
                 }
+                .buttonStyle(.plain)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     // Name and timestamp

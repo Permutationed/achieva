@@ -256,7 +256,7 @@ struct UserSearchResultRow: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            AvatarView(name: profile.fullName, size: 48)
+            AvatarView(name: profile.fullName, size: 48, avatarUrl: profile.avatarUrl)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(profile.fullName)
@@ -322,6 +322,12 @@ struct UserSearchResultRow: View {
         }
     }
 }
+
+
+
+
+
+
 
 
 

@@ -11,6 +11,7 @@ struct MessageBubble: View {
     let message: Message
     let isFromCurrentUser: Bool
     let senderName: String?
+    let senderAvatarUrl: String?
     let currentUserId: UUID
     
     var body: some View {
@@ -29,7 +30,7 @@ struct MessageBubble: View {
                 
                 HStack(alignment: .bottom, spacing: 8) {
                     if !isFromCurrentUser {
-                        AvatarView(name: senderName ?? "User", size: 32)
+                        AvatarView(name: senderName ?? "User", size: 32, avatarUrl: senderAvatarUrl)
                     }
                     
                     VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 4) {
@@ -69,7 +70,7 @@ struct MessageBubble: View {
                     }
                     
                     if isFromCurrentUser {
-                        AvatarView(name: senderName ?? "You", size: 32)
+                        AvatarView(name: senderName ?? "You", size: 32, avatarUrl: senderAvatarUrl)
                     }
                 }
                 

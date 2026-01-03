@@ -16,6 +16,7 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    entitlements: Achieva.entitlements
     sources:
       - path: .
         excludes:
@@ -36,7 +37,9 @@ targets:
           - "AchievaUITests/**"
           - "TestResults.xcresult/**"
           - "node_modules/**"
-    resources: []
+    resources:
+      - path: Assets.xcassets
+        type: assetCatalog
     info:
       path: Info.plist
       properties:
